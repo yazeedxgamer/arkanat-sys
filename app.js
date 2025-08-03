@@ -3768,16 +3768,31 @@ async function loadVacancyTabData() {
 async function loadEmployeeTabData() {
     const container = document.getElementById('employees-list-container');
     container.innerHTML = '<p style="text-align: center;">جاري تحميل الموظفين...</p>';
-
+// -- بداية الإضافة: قراءة قيم جميع الفلاتر --
     const searchVal = document.getElementById('employee-search-input').value;
     const roleVal = document.getElementById('employee-role-filter').value;
+    const regionVal = document.getElementById('employee-region-filter').value;
     const projectVal = document.getElementById('employee-project-filter').value;
+    const locationVal = document.getElementById('employee-location-filter').value;
+    // -- نهاية الإضافة --
 
     let query = supabaseClient.from('users').select(`id, name, role, project, phone, employment_status, auth_user_id`);
 
-    if (roleVal) query = query.eq('role', roleVal);
-    if (projectVal) query = query.ilike('project', `%${projectVal}%`);
-    if (searchVal) query = query.or(`name.ilike.%${searchVal}%,id_number.ilike.%${searchVal}%`);
+    if (searchVal) {
+        query = query.or(`name.ilike.%${searchVal}%,id_number.ilike.%${searchVal}%`);
+    }
+    if (roleVal) {
+        query = query.eq('role', roleVal);
+    }
+    if (regionVal) {
+        query = query.eq('region', regionVal);
+    }
+    if (projectVal) {
+        query = query.filter('project', 'cs', `{${projectVal}}`);
+    }
+    if (locationVal) {
+        query = query.ilike('location', `%${locationVal}%`);
+    }
     
     const { data: employees, error } = await query.order('name', { ascending: true });
 
@@ -4071,10 +4086,25 @@ async function generatePayroll() {
         const endDate = new Date(endDateString);
         endDate.setHours(23, 59, 59, 999);
 
-        const { data: allEmployees, error: e1 } = await supabaseClient
+
+        let query = supabaseClient
             .from('users')
             .select(`*, job_vacancies!users_vacancy_id_fkey(*, contracts!inner(*))`)
             .not('employment_status', 'in', '("تغطية", "مستقيل")');
+        
+        if (regionVal) {
+            query = query.eq('region', regionVal);
+        }
+        if (projectVal) {
+            // ملاحظة: بما أن المشروع قد يكون قائمة، نستخدم `cs` (contains)
+            query = query.filter('project', 'cs', `{${projectVal}}`);
+        }
+        if (locationVal) {
+            query = query.ilike('location', `%${locationVal}%`);
+        }
+
+        const { data: allEmployees, error: e1 } = await supabaseClient
+            
 
         const [ 
             { data: attendanceRecords, error: e2 }, { data: leaveRecords, error: e3 }, 

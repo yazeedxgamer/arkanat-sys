@@ -554,10 +554,22 @@
             <h3>قائمة الموظفين</h3>
              <button id="add-employee-btn" class="btn btn-primary"><i class="ph-bold ph-plus"></i> إضافة موظف جديد</button>
         </div>
-        <div class="filter-grid" style="padding: 20px; background-color: #f8f9fa; border-radius: 8px; margin-bottom:20px;">
+        <div class="filter-grid" style="padding: 20px; background-color: #f8f9fa; border-radius: 8px; margin-bottom:20px; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));">
             <div class="form-group"><label>بحث بالاسم أو الهوية</label><input type="text" id="employee-search-input" placeholder="ابحث..."></div>
             <div class="form-group"><label>فلترة حسب الدور</label><select id="employee-role-filter"><option value="">الكل</option><option value="حارس أمن">حارس أمن</option><option value="مشرف">مشرف</option><option value="ادارة العمليات">ادارة العمليات</option><option value="ادارة الموارد البشرية">ادارة الموارد البشرية</option><option value="ادارة العقود">ادارة العقود</option></select></div>
+            <div class="form-group">
+                <label>فلترة حسب المنطقة</label>
+                <select id="employee-region-filter">
+                    <option value="">الكل</option>
+                    <option value="الوسطى">الوسطى</option>
+                    <option value="الشمالية">الشمالية</option>
+                    <option value="الغربية">الغربية</option>
+                    <option value="الجنوبية">الجنوبية</option>
+                    <option value="الشرقية">الشرقية</option>
+                </select>
+            </div>
             <div class="form-group"><label>فلترة حسب المشروع</label><input type="text" id="employee-project-filter" placeholder="اسم المشروع..."></div>
+            <div class="form-group"><label>فلترة حسب الموقع</label><input type="text" id="employee-location-filter" placeholder="اسم الموقع..."></div>
         </div>
         <div id="employees-list-container">
              <p style="text-align: center;">جاري تحميل الموظفين...</p>
@@ -637,30 +649,41 @@
         <h3>مسير الرواتب</h3>
     </div>
     <div class="report-filters-card" style="margin-bottom: 20px;">
-        <div class="filter-grid" style="grid-template-columns: 1fr 1fr 1fr 1fr;">
-            <div class="filter-group">
-                <label for="payroll-start-date">من تاريخ</label>
-                <input type="date" id="payroll-start-date">
+                <div class="filter-grid" style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));">
+                    <div class="filter-group">
+                        <label for="payroll-start-date">من تاريخ</label>
+                        <input type="date" id="payroll-start-date">
+                    </div>
+                    <div class="filter-group">
+                        <label for="payroll-end-date">إلى تاريخ</label>
+                        <input type="date" id="payroll-end-date">
+                    </div>
+                    <div class="filter-group">
+                        <label for="payroll-region-filter">فلترة حسب المنطقة</label>
+                        <select id="payroll-region-filter">
+                            <option value="">الكل</option>
+                            <option value="الوسطى">الوسطى</option>
+                            <option value="الشمالية">الشمالية</option>
+                            <option value="الغربية">الغربية</option>
+                            <option value="الجنوبية">الجنوبية</option>
+                            <option value="الشرقية">الشرقية</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="payroll-project">فلترة حسب المشروع</label>
+                        <input type="text" id="payroll-project" placeholder="اتركه فارغاً للكل">
+                    </div>
+                    <div class="filter-group">
+                        <label for="payroll-location">فلترة حسب الموقع</label>
+                        <input type="text" id="payroll-location" placeholder="اتركه فارغاً للكل">
+                    </div>
+                    <div class="filter-group" style="align-items: flex-end;">
+                        <button id="generate-payroll-btn" class="btn btn-primary" style="width: 100%;">
+                            <i class="ph-bold ph-calculator"></i> توليد المسير
+                        </button>
+                    </div>
+                </div>
             </div>
-            <div class="filter-group">
-                <label for="payroll-end-date">إلى تاريخ</label>
-                <input type="date" id="payroll-end-date">
-            </div>
-            <div class="filter-group">
-                <label for="payroll-project">فلترة حسب المشروع (اختياري)</label>
-                <input type="text" id="payroll-project" placeholder="اتركه فارغاً للكل">
-            </div>
-            <div class="filter-group">
-    <label for="payroll-location">فلترة حسب الموقع (اختياري)</label>
-    <input type="text" id="payroll-location" placeholder="اتركه فارغاً للكل">
-</div>
-            <div class="filter-group" style="align-items: flex-end;">
-                 <button id="generate-payroll-btn" class="btn btn-primary" style="width: 100%;">
-                    <i class="ph-bold ph-calculator"></i> توليد المسير
-                 </button>
-            </div>
-        </div>
-    </div>
     <div id="payroll-results-container" class="table-container">
         <p style="text-align: center;">الرجاء اختيار الشهر والضغط على "توليد المسير" لعرض البيانات.</p>
     </div>
