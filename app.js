@@ -457,13 +457,13 @@ async function displayActiveAnnouncements() {
 }
 
 // ==========================================================
-// ===        الدالة الرئيسية لمعالجة ملف الموظفين         ===
+// ===   بداية الاستبدال الكامل لدالة معالجة ملف الموظفين   ===
 // ==========================================================
 async function processEmployeeFile(file) {
     const resultsContainer = document.getElementById('import-results-container');
     const uploadBtn = document.getElementById('upload-employees-file-btn');
     uploadBtn.disabled = true;
-    uploadBtn.innerHTML = '<i class="ph-fill ph-spinner-gap animate-spin"></i> جاري المعالجة... يرجى الانتظار';
+    uploadBtn.innerHTML = '<i class="ph-fill ph-spinner-gap animate-spin"></i> جاري المعالجة الذكية...';
     resultsContainer.innerHTML = '<p style="text-align:center;">بدأت المعالجة، قد تستغرق العملية بعض الوقت...</p>';
 
     try {
@@ -472,170 +472,67 @@ async function processEmployeeFile(file) {
         await workbook.xlsx.load(buffer);
         const worksheet = workbook.getWorksheet(1);
 
+        // 1. قراءة البيانات من الملف كما هي
+        const headerMap = {};
         const expectedHeaders = ['الاسم الكامل', 'رقم الهوية', 'رقم الجوال', 'تاريخ المباشرة', 'رقم الآيبان', 'اسم البنك', 'حالة الموظف', 'اسم المشروع', 'اسم الموقع', 'اسم الوردية', 'مسجل بالتأمينات (نعم/لا)', 'مبلغ خصم التأمينات'];
-const headerRow = worksheet.getRow(1);
-const headerMap = {};
-let headersValid = true;
-
-// التحقق من تطابق العناوين وإنشاء خريطة للأعمدة
-expectedHeaders.forEach((expectedHeader, index) => {
-    const cellValue = headerRow.getCell(index + 1).value;
-    if (cellValue !== expectedHeader) {
-        headersValid = false;
-    }
-    headerMap[expectedHeader] = index + 1;
-});
-
-if (!headersValid) {
-    throw new Error('القالب المستخدم غير صحيح. الرجاء تحميل القالب الرسمي والتأكد من تطابق عناوين الأعمدة.');
-}
-
-let employeesData = [];
-worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
-    if (rowNumber > 1) {
-        employeesData.push({
-            rowNum: rowNumber,
-            name: row.getCell(headerMap['الاسم الكامل']).value,
-            id_number: String(row.getCell(headerMap['رقم الهوية']).value),
-            phone: String(row.getCell(headerMap['رقم الجوال']).value),
-            start_date: row.getCell(headerMap['تاريخ المباشرة']).value,
-            iban: row.getCell(headerMap['رقم الآيبان']).value,
-            bank: row.getCell(headerMap['اسم البنك']).value,
-            status: row.getCell(headerMap['حالة الموظف']).value,
-            project: row.getCell(headerMap['اسم المشروع']).value,
-            location: row.getCell(headerMap['اسم الموقع']).value,
-            shift: row.getCell(headerMap['اسم الوردية']).value,
-            isInsured: row.getCell(headerMap['مسجل بالتأمينات (نعم/لا)']).value,
-            insuranceAmount: row.getCell(headerMap['مبلغ خصم التأمينات']).value,
-            result: { status: 'pending', message: '' }
+        worksheet.getRow(1).eachCell((cell, colNumber) => {
+            if (expectedHeaders.includes(cell.value)) {
+                headerMap[cell.value] = colNumber;
+            }
         });
-    }
-});
-
-if (employeesData.length === 0) throw new Error('الملف فارغ.');
-
-let finalResults = [];
-
-// المعالجة خطوة بخطوة لكل موظف
-for (const emp of employeesData) {
-    try {
-        // 1. التحقق من البيانات الإلزامية
-        if (!emp.name || !emp.id_number || !emp.project || !emp.location || !emp.shift) {
-            throw new Error('بيانات أساسية ناقصة (الاسم، الهوية، المشروع، الموقع، الوردية).');
-        }
-        if (String(emp.id_number).length < 6) throw new Error('رقم الهوية يجب أن يكون 6 أرقام على الأقل ليستخدم ككلمة مرور.');
-
-        // 2. التحقق الذكي من منطق التأمينات
-        let insuranceStatus = 'غير مسجل';
-        let insuranceDeductionAmount = 0;
-        const insuranceAnswer = emp.isInsured ? String(emp.isInsured).trim() : 'لا';
-        const insuranceAmountValue = emp.insuranceAmount ? parseFloat(emp.insuranceAmount) : null;
-
-        if (insuranceAnswer.includes('نعم')) {
-            if (insuranceAmountValue && insuranceAmountValue > 0) {
-                insuranceStatus = 'مسجل';
-                insuranceDeductionAmount = insuranceAmountValue;
-            } else {
-                throw new Error("الحالة 'نعم' للتأمينات لكن لم يتم تحديد مبلغ صحيح للخصم.");
-            }
-        } else if (insuranceAnswer.includes('لا')) {
-            if (insuranceAmountValue && insuranceAmountValue > 0) {
-                throw new Error("الحالة 'لا' للتأمينات لكن تم تحديد مبلغ للخصم.");
-            }
-        } else if (insuranceAnswer) {
-             throw new Error("قيمة عمود 'مسجل بالتأمينات' يجب أن تكون 'نعم' أو 'لا' فقط.");
+        if (Object.keys(headerMap).length !== expectedHeaders.length) {
+            throw new Error('القالب المستخدم غير صحيح أو أن هناك أعمدة مفقودة. الرجاء تحميل القالب الرسمي.');
         }
 
-        // 3. التحقق إذا كان رقم الهوية موجودًا مسبقًا
-        const { data: existingUser, error: existingUserError } = await supabaseClient
-            .from('users')
-            .select('id')
-            .eq('id_number', emp.id_number)
-            .maybeSingle();
-
-        if (existingUserError) throw new Error('خطأ أثناء التحقق من بيانات الموظف.');
-        if (existingUser) throw new Error('رقم الهوية هذا مسجل مسبقًا في النظام.');
-
-        // 4. البحث الذكي عن الشاغر
-        const { data: vacancies, error: vacancyError } = await supabaseClient
-            .from('job_vacancies')
-            .select('id, contract_id, schedule_details')
-            .eq('project', emp.project)
-            .eq('specific_location', emp.location)
-            .eq('status', 'open')
-            .filter('schedule_details', 'cs', `[{"name":"${emp.shift}"}]`);
-
-        if (vacancyError) throw new Error(`خطأ في قاعدة البيانات أثناء البحث عن الشاغر.`);
-        if (vacancies.length === 0) throw new Error(`لم يتم العثور على شاغر مفتوح يطابق المشروع والموقع والوردية.`);
-        if (vacancies.length > 1) throw new Error(`تم العثور على أكثر من شاغر مطابق. يرجى مراجعة الشواغر المفتوحة.`);
-
-        const foundVacancy = vacancies[0];
-
-        // 5. تجهيز بيانات الموظف النهائية
-        const profileData = {
-            name: emp.name,
-            id_number: emp.id_number,
-            phone: emp.phone,
-            start_of_work_date: new Date(emp.start_date).toISOString().split('T')[0],
-            iban: emp.iban,
-            bank_name: emp.bank,
-            employment_status: emp.status,
-            vacancy_id: foundVacancy.id,
-            contract_id: foundVacancy.contract_id,
-            project: [emp.project],
-            role: 'حارس أمن',
-            insurance_status: insuranceStatus,
-            insurance_deduction_amount: insuranceDeductionAmount
-        };
-
-        // 6. استدعاء الدالة السحابية (استخدام رقم الهوية ككلمة مرور)
-        const { data: creationResult, error: creationError } = await supabaseClient.functions.invoke('create-employee', {
-            body: { password: emp.id_number, ...profileData }
+        let employeesData = [];
+        worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+            if (rowNumber > 1) {
+                employeesData.push({
+                    rowNum: rowNumber,
+                    name: row.getCell(headerMap['الاسم الكامل']).value,
+                    id_number: row.getCell(headerMap['رقم الهوية']).value,
+                    phone: row.getCell(headerMap['رقم الجوال']).value,
+                    start_date: row.getCell(headerMap['تاريخ المباشرة']).value,
+                    iban: row.getCell(headerMap['رقم الآيبان']).value,
+                    bank: row.getCell(headerMap['اسم البنك']).value,
+                    status: row.getCell(headerMap['حالة الموظف']).value,
+                    project: row.getCell(headerMap['اسم المشروع']).value,
+                    location: row.getCell(headerMap['اسم الموقع']).value,
+                    shift: row.getCell(headerMap['اسم الوردية']).value,
+                    isInsured: row.getCell(headerMap['مسجل بالتأمينات (نعم/لا)']).value,
+                    insuranceAmount: row.getCell(headerMap['مبلغ خصم التأمينات']).value,
+                });
+            }
+        });
+        if (employeesData.length === 0) throw new Error('الملف فارغ.');
+        
+        // 2. إرسال البيانات للدالة السحابية الذكية
+        const { data, error } = await supabaseClient.functions.invoke('smart-process-employees', {
+            body: { employeesData }
         });
 
-        if (creationError || (creationResult && creationResult.error)) {
-            throw new Error(creationError?.message || creationResult.error);
-        }
+        if (error) throw error;
+        if (data.error) throw new Error(data.error);
+        
+        const finalResults = data.results;
 
-        // 7. تحديث الشاغر
-        await supabaseClient.from('job_vacancies').update({ status: 'closed' }).eq('id', foundVacancy.id);
-
-        emp.result = { status: 'success', message: 'تمت الإضافة بنجاح.' };
-    } catch (e) {
-        emp.result = { status: 'error', message: e.message };
-    }
-    finalResults.push(emp);
-}
-
-        // عرض التقرير النهائي
+        // 3. عرض التقرير النهائي العائد من الدالة السحابية
         const successCount = finalResults.filter(r => r.result.status === 'success').length;
         const errorCount = finalResults.filter(r => r.result.status === 'error').length;
-
         let reportHtml = `
             <h4 style="text-align:center; margin-bottom: 20px;">
                 اكتملت المعالجة: ${successCount} نجاح، ${errorCount} فشل
             </h4>
             <div class="table-container">
                 <table>
-                    <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>الاسم</th>
-                            <th>الحالة</th>
-                            <th>ملاحظات</th>
-                        </tr>
-                    </thead>
+                    <thead><tr><th>#</th><th>الاسم</th><th>الحالة</th><th>ملاحظات</th></tr></thead>
                     <tbody>
                         ${finalResults.map(r => `
                             <tr style="background-color: ${r.result.status === 'success' ? '#f0fff4' : '#fff5f5'};">
                                 <td>${r.rowNum}</td>
                                 <td>${r.name}</td>
-                                <td>
-                                    <span class="status ${r.result.status === 'success' ? 'active' : 'inactive'}">
-                                        ${r.result.status === 'success' ? 'نجاح' : 'فشل'}
-                                    </span>
-                                </td>
-                                <td>${r.result.message}</td>
+                                <td><span class="status ${r.result.status === 'success' ? 'active' : 'inactive'}">${r.result.status === 'success' ? 'نجاح' : 'فشل'}</span></td>
+                                <td style="text-align: right;">${r.result.message}</td>
                             </tr>
                         `).join('')}
                     </tbody>
@@ -643,15 +540,20 @@ for (const emp of employeesData) {
             </div>
         `;
         resultsContainer.innerHTML = reportHtml;
-        loadEmployeeTabData(); // تحديث القائمة الرئيسية
-        loadVacancyTabData(); // تحديث الشواغر
+        loadEmployeeTabData();
+        loadVacancyTabData();
 
+    } catch (e) {
+        resultsContainer.innerHTML = `<p style="color:red; text-align:center; padding: 20px;">حدث خطأ فادح: ${e.message}</p>`;
+        console.error("Employee File Processing Error:", e);
     } finally {
         uploadBtn.disabled = false;
         uploadBtn.innerHTML = '<i class="ph-bold ph-upload-simple"></i> اختيار ورفع ملف Excel';
     }
 }
-
+// ==========================================================
+// ===    نهاية الاستبدال الكامل لدالة معالجة ملف الموظفين   ===
+// ==========================================================
 // ==========================================================
 // ===   بداية دالة مساعدة لفلترة المشاريع بشكل صحيح     ===
 // ==========================================================
@@ -4076,6 +3978,13 @@ async function generatePayroll() {
     const resultsContainer = document.getElementById('payroll-results-container');
     const startDateString = document.getElementById('payroll-start-date').value;
     const endDateString = document.getElementById('payroll-end-date').value;
+    
+    // --- بداية الإضافة: هنا تم إضافة الأسطر الثلاثة الناقصة ---
+    const regionVal = document.getElementById('payroll-region-filter').value;
+    const projectVal = document.getElementById('payroll-project').value;
+    const locationVal = document.getElementById('payroll-location').value;
+    // --- نهاية الإضافة ---
+
     if (!startDateString || !endDateString) return alert('الرجاء تحديد تاريخ البداية والنهاية.');
     
     resultsContainer.innerHTML = '<p style="text-align: center;">جاري جلب البيانات وحساب الرواتب...</p>';
@@ -4103,7 +4012,7 @@ async function generatePayroll() {
             query = query.ilike('location', `%${locationVal}%`);
         }
 
-        const { data: allEmployees, error: e1 } = await supabaseClient
+        const { data: allEmployees, error: e1 } = await query;
             
 
         const [ 
@@ -4257,7 +4166,6 @@ async function generatePayroll() {
         console.error("Payroll Error:", err);
     }
 }
-// ========= نهاية الاستبدال الكامل لدالة generatePayroll =========
 // ========= نهاية الاستبدال الكامل لدالة generatePayroll =========
 
 async function exportPayrollToExcel(data, filename) {
@@ -6070,18 +5978,28 @@ if (exportAbsenteeBtn) {
 // ==========================================================
 // ===   بداية الاستبدال الكامل لمنطق زر تسجيل الحضور   ===
 // ==========================================================
-// ==========================================================
-// ===   بداية الاستبدال الكامل لمنطق زر تسجيل الحضور   ===
-// ==========================================================
 if (event.target.closest('#check-in-btn')) {
     const checkInBtn = event.target.closest('#check-in-btn');
     checkInBtn.disabled = true;
     checkInBtn.innerHTML = '<i class="ph-fill ph-spinner-gap animate-spin"></i> التحقق...';
 
+    // --- إضافة جديدة: محاولة تفعيل صلاحيات الموقع للإطارات الداخلية ---
+    try {
+        if (window.frameElement) {
+            window.frameElement.setAttribute('allow', 'geolocation');
+        }
+    } catch (e) {
+        console.warn("Could not set iframe geolocation policy:", e);
+    }
+    // --- نهاية الإضافة ---
+
+    // دالة مخصصة لمعالجة أخطاء تحديد الموقع وعرضها للمستخدم
     const handleLocationError = (geoError) => {
-        console.error('Geolocation Error:', geoError); // لطباعة الخطأ الفعلي
+        console.error('Geolocation Error:', geoError); // لطباعة الخطأ الفعلي في الكونسول
         let title = 'خطأ في تحديد الموقع';
         let message;
+
+        // رسائل مخصصة لكل نوع من أنواع الأخطاء
         switch (geoError.code) {
             case 1: // PERMISSION_DENIED
                 title = 'صلاحية الموقع مرفوضة';
@@ -6098,82 +6016,123 @@ if (event.target.closest('#check-in-btn')) {
             default:
                 message = geoError.message || 'فشل النظام في الوصول لموقعك. يرجى المحاولة مرة أخرى.';
         }
-        showCustomAlert(title, message, 'error');
+        
+        showCustomAlert(title, message, 'error'); // استخدام نظام التنبيهات المخصص
         checkInBtn.disabled = false;
         checkInBtn.innerHTML = 'تسجيل حضور';
     };
 
     try {
-        let shift, siteCoords, radius;
-        if (currentUser.employment_status === 'تغطية') {
-            const { data: assignment, error: assignError } = await supabaseClient.from('coverage_applicants').select('coverage_shifts!inner(*)').eq('applicant_user_id', currentUser.id).in('status', ['ops_final_approved', 'hr_approved']).single();
-            if (assignError || !assignment) throw new Error('لم يتم العثور على وردية تغطية معينة لك.');
-            const coverageShift = assignment.coverage_shifts;
-            shift = { start_time: coverageShift.start_time, days: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'] };
-            if (!coverageShift.linked_vacancy_id) throw new Error('لا يمكن تسجيل الحضور لهذه التغطية. النطاق الجغرافي غير محدد.');
-            const { data: vacancy, error: vacError } = await supabaseClient.from('job_vacancies').select('contract_id, specific_location').eq('id', coverageShift.linked_vacancy_id).single();
-            if (vacError) throw new Error('خطأ في جلب بيانات الشاغر المرتبط بالتغطية.');
-            const { data: contract, error: conError } = await supabaseClient.from('contracts').select('contract_locations').eq('id', vacancy.contract_id).single();
-            if (conError) throw new Error('لا يمكن العثور على بيانات العقد.');
-            const locationData = contract.contract_locations.find(loc => loc.name === vacancy.specific_location);
-            if (!locationData || !locationData.geofence_link) throw new Error('لم يتم تحديد إحداثيات الموقع في العقد.');
-            siteCoords = parseCoordinates(locationData.geofence_link);
-            radius = locationData.geofence_radius || 200;
-        } else {
-            if (!currentUser.vacancy_id) throw new Error('أنت غير معين على شاغر وظيفي حالياً.');
-            const { data: vacancy, error: e1 } = await supabaseClient.from('job_vacancies').select('contract_id, specific_location, schedule_details').eq('id', currentUser.vacancy_id).single();
-            if (e1 || !vacancy?.schedule_details?.[0]) throw new Error('لم يتم العثور على جدول ورديات لك.');
-            shift = vacancy.schedule_details[0];
-            const { data: contract, error: e2 } = await supabaseClient.from('contracts').select('contract_locations').eq('id', vacancy.contract_id).single();
-            if (e2) throw new Error('لا يمكن العثور على بيانات العقد.');
-            const locationData = contract.contract_locations.find(loc => loc.name === vacancy.specific_location);
-            if (!locationData || !locationData.geofence_link) throw new Error('لم يتم تحديد إحداثيات الموقع في العقد.');
-            siteCoords = parseCoordinates(locationData.geofence_link);
-            radius = locationData.geofence_radius || 200;
+        // 1. التحقق من وجود شاغر وجدول للمستخدم
+        if (!currentUser.vacancy_id) {
+            throw new Error('أنت غير معين على شاغر وظيفي حالياً، لا يمكن تحديد ورديتك.');
+        }
+        const { data: vacancy, error: vacancyError } = await supabaseClient
+            .from('job_vacancies')
+            .select('schedule_details, contract_id, specific_location') // جلب البيانات اللازمة للنطاق الجغرافي
+            .eq('id', currentUser.vacancy_id)
+            .single();
+
+        if (vacancyError || !vacancy || !vacancy.schedule_details || vacancy.schedule_details.length === 0) {
+            throw new Error('لم يتم العثور على جدول ورديات لك. يرجى مراجعة الإدارة.');
+        }
+        
+        // 2. التحقق من بيانات العقد والموقع الجغرافي
+        const { data: contract, error: contractError } = await supabaseClient
+            .from('contracts')
+            .select('contract_locations')
+            .eq('id', vacancy.contract_id)
+            .single();
+
+        if (contractError || !contract || !contract.contract_locations) {
+            throw new Error('لا يمكن العثور على بيانات العقد المرتبط بالشاغر.');
         }
 
+        const locationData = contract.contract_locations.find(loc => loc.name === vacancy.specific_location);
+        if (!locationData || !locationData.geofence_link) {
+            throw new Error('لم يتم تحديد إحداثيات الموقع أو النطاق الجغرافي في العقد.');
+        }
+
+        const siteCoords = parseCoordinates(locationData.geofence_link);
+        const radius = locationData.geofence_radius || 200; // 200 متر كقيمة افتراضية
+
+        if (!siteCoords) {
+             throw new Error('إحداثيات موقع العمل في العقد غير صالحة.');
+        }
+
+        const shift = vacancy.schedule_details[0];
         const dayMap = {Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6};
         const todayIndex = new Date().getDay();
         const todayKey = Object.keys(dayMap).find(key => dayMap[key] === todayIndex);
-        if (!shift.days.includes(todayKey)) throw new Error('ليس لديك وردية مجدولة لهذا اليوم.');
-        
+
+        if (!shift.days.includes(todayKey)) {
+            throw new Error('ليس لديك وردية مجدولة لهذا اليوم.');
+        }
+
+        // 3. حساب أوقات الدوام المسموح بها
         const now = new Date();
         const [startHours, startMinutes] = shift.start_time.split(':');
+        
         const shiftStartTime = new Date();
         shiftStartTime.setHours(startHours, startMinutes, 0, 0);
-        const allowedCheckinTime = new Date(shiftStartTime.getTime() - 15 * 60 * 1000);
-        if (now < allowedCheckinTime) throw new Error(`الوقت مبكر جداً. ورديتك تبدأ الساعة ${formatTimeAMPM(shift.start_time)}.`);
-        
-        if (!siteCoords || typeof siteCoords.lat !== 'number' || typeof siteCoords.lng !== 'number') {
-            throw new Error('إحداثيات موقع العمل في العقد غير صالحة أو غير مسجلة.');
+
+        const allowedCheckinTime = new Date(shiftStartTime.getTime() - 15 * 60 * 1000); // 15 دقيقة قبل الوردية
+
+        // 4. التحقق إذا كان الوقت مبكراً جداً
+        if (now < allowedCheckinTime) {
+            const remainingMs = allowedCheckinTime - now;
+            const remainingMinutes = Math.ceil(remainingMs / 60000);
+            const shiftTimeFormatted = formatTimeAMPM(shift.start_time);
+            const alertMessage = `موعد ورديتك هو الساعة ${shiftTimeFormatted}. يمكنك تسجيل الحضور قبل 15 دقيقة فقط. باقي على وقت الحضور: ${remainingMinutes} دقيقة تقريباً.`;
+            
+            throw new Error(alertMessage);
         }
-        
-        checkInBtn.innerHTML = '<i class="ph-fill ph-spinner-gap animate-spin"></i> تحديد موقعك...';
+
+        // 5. إذا كان الوقت مناسباً، قم بطلب الموقع والمتابعة
+        checkInBtn.innerHTML = '<i class="ph-fill ph-spinner-gap animate-spin"></i> جاري تحديد موقعك...';
         
         navigator.geolocation.getCurrentPosition(async (position) => {
             try {
                 const guardCoords = { lat: position.coords.latitude, lng: position.coords.longitude };
                 const distance = calculateDistance(siteCoords, guardCoords);
-                if (distance > radius) throw new Error(`أنت خارج نطاق العمل. المسافة الحالية: ${Math.round(distance)} متر.`);
+
+                // التحقق من المسافة
+                if (distance > radius) {
+                    throw new Error(`أنت خارج نطاق العمل المسموح به. المسافة الحالية من الموقع هي حوالي ${Math.round(distance)} متر.`);
+                }
                 
-                const { error: insertError } = await supabaseClient.from('attendance').insert({ guard_id: currentUser.id, guard_name: currentUser.name, vacancy_id: currentUser.vacancy_id, checkin_lat: guardCoords.lat, checkin_lon: guardCoords.lng, status: 'حاضر' });
-                if (insertError) throw insertError;
+                // تسجيل الحضور في قاعدة البيانات
+                const { error: insertError } = await supabaseClient.from('attendance').insert({
+                    guard_id: currentUser.id,
+                    guard_name: currentUser.name,
+                    checkin_lat: guardCoords.lat,
+                    checkin_lon: guardCoords.lng,
+                    status: 'حاضر'
+                });
+
+                if (insertError) {
+                    // معالجة الأخطاء المحتملة من قاعدة البيانات
+                    throw new Error('حدث خطأ أثناء محاولة تسجيل حضورك في قاعدة البيانات.');
+                }
                 
                 showCustomAlert('نجاح', 'تم تسجيل حضورك بنجاح.', 'success');
-                loadAttendancePage();
+                loadAttendancePage(); // تحديث الواجهة لإظهار حالة الحضور الجديدة
+
             } catch (innerError) {
+                // هذا يلتقط الأخطاء داخل دالة تحديد الموقع (مثل الخروج عن النطاق)
                 showCustomAlert('خطأ', innerError.message, 'error');
                 checkInBtn.disabled = false;
                 checkInBtn.innerHTML = 'تسجيل حضور';
             }
         }, handleLocationError, { 
-            enableHighAccuracy: true,
-            timeout: 15000,
-            maximumAge: 0
+            enableHighAccuracy: true, // طلب دقة عالية
+            timeout: 15000,          // مهلة 15 ثانية
+            maximumAge: 0            // طلب قراءة جديدة للموقع دائماً
         });
 
     } catch (error) {
-        showCustomAlert('خطأ', error.message, 'error');
+        // هذا الجزء يلتقط أي خطأ يحدث في الخطوات الأولى (مثل عدم وجود وردية أو الوقت مبكر)
+        showCustomAlert('تنبيه', error.message, 'error');
         checkInBtn.disabled = false;
         checkInBtn.innerHTML = 'تسجيل حضور';
     }
@@ -6181,6 +6140,7 @@ if (event.target.closest('#check-in-btn')) {
 // ==========================================================
 // ===    نهاية الاستبدال الكامل لمنطق زر تسجيل الحضور    ===
 // ==========================================================
+
 // نهاية الاستبدال
 
 
@@ -9743,90 +9703,7 @@ if (confirmEndPatrolBtn) {
     const checkInBtn = event.target.closest('#check-in-btn');
     const checkOutBtn = event.target.closest('#check-out-btn');
 
-// بداية الكود الجديد والمطور
-if (checkInBtn) {
-    checkInBtn.disabled = true;
-    checkInBtn.innerHTML = '<i class="ph-fill ph-spinner-gap animate-spin"></i> التحقق من الوردية...';
 
-    try {
-        // 1. التحقق من وجود شاغر وجدول للمستخدم
-        if (!currentUser.vacancy_id) {
-            throw new Error('أنت غير معين على شاغر وظيفي حالياً، لا يمكن تحديد ورديتك.');
-        }
-        const { data: vacancy, error: vacancyError } = await supabaseClient
-            .from('job_vacancies')
-            .select('schedule_details')
-            .eq('id', currentUser.vacancy_id)
-            .single();
-
-        if (vacancyError || !vacancy || !vacancy.schedule_details || vacancy.schedule_details.length === 0) {
-            throw new Error('لم يتم العثور على جدول ورديات لك. يرجى مراجعة الإدارة.');
-        }
-
-        const shift = vacancy.schedule_details[0];
-        const dayMap = {Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6};
-        const todayIndex = new Date().getDay();
-        const todayKey = Object.keys(dayMap).find(key => dayMap[key] === todayIndex);
-
-        if (!shift.days.includes(todayKey)) {
-            throw new Error('ليس لديك وردية مجدولة لهذا اليوم.');
-        }
-
-        // 2. حساب أوقات الدوام المسموح بها
-        const now = new Date();
-        const [startHours, startMinutes] = shift.start_time.split(':');
-        
-        const shiftStartTime = new Date();
-        shiftStartTime.setHours(startHours, startMinutes, 0, 0);
-
-        const allowedCheckinTime = new Date(shiftStartTime.getTime() - 15 * 60 * 1000); // 15 دقيقة قبل الوردية
-
-        // 3. التحقق إذا كان الوقت مبكراً جداً
-        if (now < allowedCheckinTime) {
-            const remainingMs = allowedCheckinTime - now;
-            const remainingMinutes = Math.ceil(remainingMs / 60000);
-            const shiftTimeFormatted = formatTimeAMPM(shift.start_time);
-
-            const alertMessage = `لا يمكنك تسجيل الحضور الآن.\n\nموعد ورديتك هو الساعة ${shiftTimeFormatted}.\nيمكنك تسجيل الحضور قبل 15 دقيقة فقط من بداية الوردية.\n\nباقي على وقت الحضور: ${remainingMinutes} دقيقة تقريباً.`;
-            alert(alertMessage);
-            
-            throw new Error("الوقت مبكر جداً لتسجيل الحضور."); // إيقاف التنفيذ وإظهار الخطأ في الكونسول
-        }
-
-        // 4. إذا كان الوقت مناسباً، قم بطلب الموقع والمتابعة
-        checkInBtn.innerHTML = '<i class="ph-fill ph-spinner-gap animate-spin"></i> جاري تحديد الموقع...';
-        navigator.geolocation.getCurrentPosition(async (position) => {
-            const { latitude, longitude } = position.coords;
-            const { error } = await supabaseClient.from('attendance').insert({
-                guard_id: currentUser.id,
-                guard_name: currentUser.name,
-                checkin_lat: latitude,
-                checkin_lon: longitude,
-                status: 'حاضر'
-            });
-
-            if (error) {
-                alert('حدث خطأ أثناء تسجيل الحضور.');
-            } else {
-                alert('تم تسجيل حضورك بنجاح.');
-            }
-            loadAttendancePage(); // تحديث الواجهة
-        }, (geoError) => {
-            // يتم استدعاء هذا الجزء في حالة رفض صلاحية الموقع
-            alert('لا يمكن تسجيل الحضور. يرجى تمكين صلاحية الوصول للموقع من إعدادات المتصفح.');
-            checkInBtn.disabled = false;
-            checkInBtn.innerHTML = 'تسجيل حضور';
-        });
-
-    } catch (error) {
-        // هذا الجزء يلتقط أي خطأ يحدث في الخطوات أعلاه
-        // alert(error.message); // يمكنك تفعيل هذا السطر إذا أردت ظهور رسالة بالخطأ
-        console.error("Check-in Error:", error.message);
-        checkInBtn.disabled = false;
-        checkInBtn.innerHTML = 'تسجيل حضور';
-    }
-}
-// نهاية الكود الجديد والمطور
 
 // عند الضغط على زر "تسجيل انصراف"
 // ==================== بداية الاستبدال ====================
