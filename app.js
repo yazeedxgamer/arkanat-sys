@@ -5039,12 +5039,25 @@ document.addEventListener('change', async (event) => {
         } else if (role === 'مشرف') {
             assignmentGroup.classList.remove('hidden');
             projectGroup.classList.remove('hidden');
-            const projectSelect = document.getElementById('assign-project-select');
-            projectSelect.innerHTML = '<option value="">جاري تحميل المشاريع...</option>';
+            
+            // --- هنا تم التصحيح الكامل ---
+            const projectContainer = document.getElementById('assign-project-checkbox-container');
+            projectContainer.innerHTML = '<p>جاري تحميل المشاريع...</p>'; // رسالة تحميل مؤقتة
+            
             const { data: contracts } = await supabaseClient.from('contracts').select('company_name');
-            const projectNames = [...new Set(contracts.map(c => c.company_name))];
-            projectSelect.innerHTML = '<option value="">-- اختر المشروع --</option>';
-            projectSelect.innerHTML += projectNames.map(p => `<option value="${p}">${p}</option>`).join('');
+            
+            if (contracts) {
+                const projectNames = [...new Set(contracts.map(c => c.company_name))];
+                // بناء مربعات الاختيار داخل الحاوية الصحيحة
+                projectContainer.innerHTML = `
+                    <div class="checkbox-grid">
+                        ${projectNames.map(p => `<label><input type="checkbox" value="${p}"> ${p}</label>`).join('')}
+                    </div>
+                `;
+            } else {
+                projectContainer.innerHTML = '<p>لم يتم العثور على مشاريع.</p>';
+            }
+            // --- نهاية التصحيح الكامل ---
         }
     }
 
