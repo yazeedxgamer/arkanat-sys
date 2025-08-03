@@ -2041,7 +2041,7 @@ async function loadAttendancePage() {
             .limit(1)
             .single();
 
-        if (attendanceError && attendanceError.code !== 'PGRST116') { // PGRST116 means no rows found, which is not an error here.
+        if (attendanceError && attendanceError.code !== 'PGRST116') {
             throw attendanceError;
         }
 
@@ -2049,7 +2049,7 @@ async function loadAttendancePage() {
         const checkInBtn = document.getElementById('check-in-btn');
         const checkOutBtn = document.getElementById('check-out-btn');
 
-        if (openRecord) { // إذا كان هناك سجل حضور مفتوح
+        if (openRecord) {
             const clockInTime = new Date(openRecord.created_at).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
 
             if (openRecord.status === 'انسحاب') {
@@ -2060,19 +2060,19 @@ async function loadAttendancePage() {
                 checkOutBtn.classList.remove('hidden');
                 checkOutBtn.dataset.attendanceId = openRecord.id;
 
-                // --- هنا التعديل: جلب البيانات الكاملة قبل بدء التتبع ---
+                // --- هنا التعديل المهم: استخدام نفس طريقة جلب البيانات الناجحة ---
                 const { data: fullUser, error: userError } = await supabaseClient
                     .from('users')
-                    .select('*, job_vacancies(*, contracts(*))')
+                    .select('*, job_vacancies:job_vacancies!users_vacancy_id_fkey(*, contracts(*))')
                     .eq('id', currentUser.id)
                     .single();
 
                 if (userError || !fullUser || !fullUser.job_vacancies) {
                     throw new Error('لا يمكن تفعيل التتبع، الموظف غير مرتبط بشاغر.');
                 }
-                startPersistentTracking(fullUser, openRecord.id); // تمرير البيانات الكاملة
+                startPersistentTracking(fullUser, openRecord.id);
             }
-        } else { // إذا لم يكن هناك سجل حضور مفتوح
+        } else {
             statusText.innerHTML = `<p>حالتك الحالية: <strong>لم تسجل حضور بعد</strong></p>`;
             checkInBtn.classList.remove('hidden');
             stopPersistentTracking();
