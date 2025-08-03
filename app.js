@@ -558,28 +558,22 @@ async function processEmployeeFile(file) {
 // ===   بداية دالة مساعدة لفلترة المشاريع بشكل صحيح     ===
 // ==========================================================
 function createProjectFilter(query, projectData, columnName = 'project') {
-    if (!projectData || projectData.length === 0) {
-        return query; // لا يوجد فلتر إذا لم تكن هناك بيانات
+    // إذا لم يكن للمشرف أي مشاريع، نرجع استعلاماً فارغاً لمنع عرض جميع البيانات
+    if (!projectData || !Array.isArray(projectData) || projectData.length === 0) {
+        // A non-existent UUID to ensure no results are returned
+        return query.eq('id', '00000000-0000-0000-0000-000000000000'); 
     }
 
-    // دالة داخلية لتحويل مصفوفة جافاسكريبت إلى صيغة نصية تفهمها قاعدة البيانات
+    // دالة لتحويل مصفوفة جافاسكريبت إلى صيغة نصية تفهمها قاعدة البيانات
+    // مثال: ['Project A', 'Project B'] تصبح '{"Project A","Project B"}'
     const toPostgresArrayLiteral = (arr) => {
         const formattedElements = arr.map(element => `"${element.replace(/"/g, '""')}"`);
         return `{${formattedElements.join(',')}}`;
     };
 
-    // الحالة 1: إذا كانت البيانات مصفوفة (للمشرفين)
-    if (Array.isArray(projectData)) {
-        // --- هنا التصحيح: تم تغيير عامل الفلترة ---
-        return query.filter(columnName, 'cd', toPostgresArrayLiteral(projectData));
-    } 
-    // الحالة 2: إذا كانت البيانات نصاً واحداً (للحالات القديمة)
-    else if (typeof projectData === 'string') {
-        // --- وهنا أيضاً ---
-        return query.filter(columnName, 'cd', toPostgresArrayLiteral([projectData]));
-    }
-
-    return query;
+    // *** هنا تم التصحيح: استخدام العامل 'ov' (overlaps) ***
+    // هذا العامل يتحقق بشكل صحيح من وجود أي عنصر مشترك بين مصفوفتين نصيتين
+    return query.filter(columnName, 'ov', toPostgresArrayLiteral(projectData));
 }
 // ==========================================================
 // ===    نهاية دالة مساعدة لفلترة المشاريع بشكل صحيح    ===
@@ -1083,30 +1077,43 @@ async function loadOpsDirectivesPage() {
 async function loadGuardAttendancePage() {
     const container = document.getElementById('guard-attendance-container');
     container.innerHTML = '<p style="text-align: center;">جاري تحميل بيانات الفريق...</p>';
-    if (!currentUser || !['ادارة العمليات', 'مشرف', 'مدير النظام'].includes(currentUser.role)) return;
+    
+    console.log("--- Diagnostic: Starting loadGuardAttendancePage ---");
+    
+    if (!currentUser || !['ادارة العمليات', 'مشرف', 'مدير النظام'].includes(currentUser.role)) {
+        console.error("Diagnostic: User not logged in or doesn't have the correct role.");
+        return;
+    }
+    
+    console.log("Diagnostic: Current user object:", currentUser);
 
     try {
         let guards = [];
         let queryError = null;
 
+        let query = supabaseClient
+            .from('users')
+            .select('id, name, project, location, region, city, employment_status, job_vacancies!users_vacancy_id_fkey(schedule_details)')
+            .eq('role', 'حارس أمن')
+            .in('employment_status', ['اساسي', 'تغطية']); 
+
         if (currentUser.role === 'مشرف') {
-            const { data, error } = await supabaseClient.rpc('get_supervisor_guards', {
-                p_supervisor_projects: currentUser.project
-            });
-            guards = data;
-            queryError = error;
-        } else {
-            let query = supabaseClient.from('users').select('id, name, project, location, region, city, employment_status, job_vacancies!users_vacancy_id_fkey(schedule_details)')
-                .eq('role', 'حارس أمن')
-                .in('employment_status', ['اساسي', 'تغطية']); 
-            
-            if (currentUser.role === 'ادارة العمليات') query = query.eq('region', currentUser.region);
-            const { data, error } = await query;
-            guards = data;
-            queryError = error;
+            console.log("Diagnostic: Applying filter for 'مشرف'.");
+            query = createProjectFilter(query, currentUser.project, 'project');
+        } else if (currentUser.role === 'ادارة العمليات') {
+            console.log("Diagnostic: Applying filter for 'ادارة العمليات'.");
+            query = query.eq('region', currentUser.region);
         }
         
+        console.log("Diagnostic: Final query before execution:", query);
+
+        const { data, error } = await query;
+        guards = data;
+        queryError = error;
+        
         if (queryError) throw queryError;
+        
+        console.log("Diagnostic: Data returned from Supabase for guards:", guards);
 
         const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
         const { data: attendanceRecords, error: e2 } = await supabaseClient.from('attendance').select('guard_id, created_at, status').gte('created_at', yesterday);
@@ -1114,9 +1121,11 @@ async function loadGuardAttendancePage() {
 
         if (!guards || guards.length === 0) {
             container.innerHTML = '<p style="text-align: center;">لا يوجد حراس أمن في نطاق صلاحياتك حالياً.</p>';
+            console.warn("Diagnostic: No guards found after query execution.");
             return;
         }
 
+        // ... (باقي الكود يبقى كما هو)
         const now = new Date();
         const currentDay = now.toLocaleString('en-US', { weekday: 'short' });
         const isAdmin = currentUser.role === 'مدير النظام';
@@ -1150,12 +1159,10 @@ async function loadGuardAttendancePage() {
                         actionButton = `<button class="btn btn-secondary btn-sm view-on-map-btn" data-guard-id="${guard.id}" title="عرض في الخريطة"><i class="ph-bold ph-map-pin-line"></i></button>`;
                     } else if (latestAttendance.status === 'انسحاب') {
                         status = { text: `منسحب (منذ ${checkInTime})`, class: 'absent' };
-                        // -- بداية الإضافة: التحقق من دور المستخدم --
-                        if (currentUser.role === 'ادارة العمليات') {
+                        if (currentUser.role === 'ادارة العمليات' || currentUser.role === 'مشرف') {
                             const shiftData = { project: guard.project, location: guard.location, region: guard.region, city: guard.city, ...shift };
                             actionButton = `<button class="btn btn-secondary btn-sm add-to-coverage-btn" data-shift='${JSON.stringify(shiftData)}'><i class="ph-bold ph-plus"></i> للتغطية</button>`;
                         }
-                        // -- نهاية الإضافة --
                     }
                 } else {
                     const startTime = new Date(now);
@@ -1163,26 +1170,24 @@ async function loadGuardAttendancePage() {
                     startTime.setHours(startHours, startMinutes, 0, 0);
                     if (now >= startTime) {
                         status = { text: 'لم يحضر (غياب)', class: 'absent' };
-                        // -- بداية الإضافة: التحقق من دور المستخدم --
-                        if (currentUser.role === 'ادارة العمليات') {
+                        if (currentUser.role === 'ادارة العمليات' || currentUser.role === 'مشرف') {
                             const shiftData = { project: guard.project, location: guard.location, region: guard.region, city: guard.city, ...shift };
                             actionButton = `<button class="btn btn-secondary btn-sm add-to-coverage-btn" data-shift='${JSON.stringify(shiftData)}'><i class="ph-bold ph-plus"></i> للتغطية</button>`;
                         }
-                        // -- نهاية الإضافة --
                     } else {
                         status.text = 'وردية قادمة';
                     }
                 }
             }
             
-            const projectDisplay = (Array.isArray(guard.project)) ? guard.project.join('') : guard.project;
+            const projectDisplay = (Array.isArray(guard.project)) ? guard.project.join(', ') : guard.project;
             const directiveButton = `<button class="btn btn-secondary btn-sm open-directive-modal-btn" data-recipient-id="${guard.id}" data-recipient-name="${guard.name}" title="إرسال توجيه"><i class="ph-bold ph-paper-plane-tilt"></i></button>`;
-            guardsStatusHtml += `<div class="attendance-card ${status.class}"><div><span>${guard.name}</span><p class="time">${projectDisplay} / ${guard.location || ''}</p></div><div style="display: flex; align-items: center; gap: 10px;"><span class="status-text">${status.text}</span>${actionButton}${directiveButton}${adminEditButton}</div></div>`;
+            guardsStatusHtml += `<div class="attendance-card ${status.class}"><div><span>${guard.name}</span><p class="time">${projectDisplay || ''} / ${guard.location || ''}</p></div><div style="display: flex; align-items: center; gap: 10px;"><span class="status-text">${status.text}</span>${actionButton}${directiveButton}${adminEditButton}</div></div>`;
         }
         container.innerHTML = `<div class="attendance-list">${guardsStatusHtml}</div>`;
     } catch (err) {
         container.innerHTML = `<p style="color: red;">حدث خطأ: ${err.message}</p>`;
-        console.error("Guard Attendance Error:", err);
+        console.error("Diagnostic: Guard Attendance Error:", err);
     }
 }
 // ==========================================================
@@ -4900,15 +4905,37 @@ if (menuBtn) {
     const mainTitle = document.getElementById('main-title');
 
     // ==================== بداية الاستبدال ====================
+// ==========================================================
+// ===   بداية الاستبدال الكامل لمنطق التنقل بين الصفحات   ===
+// ==========================================================
+// دالة جديدة ومهمة لإعادة جلب بيانات المستخدم الحالي من قاعدة البيانات
+async function refreshCurrentUser() {
+    if (currentUser && currentUser.id) {
+        const { data, error } = await supabaseClient
+            .from('users')
+            .select('*')
+            .eq('id', currentUser.id)
+            .single();
+        if (data) {
+            currentUser = data;
+            sessionStorage.setItem('currentUser', JSON.stringify(data)); // تحديث البيانات المحفوظة
+            console.log("User data refreshed:", currentUser);
+        }
+    }
+}
+
 navLinks.forEach(link => {
-    link.addEventListener('click', function(event) {
+    link.addEventListener('click', async function(event) { // تم تحويلها إلى async
         event.preventDefault();
+        
+        // --- هنا تم إضافة السطر الجديد والمهم ---
+        await refreshCurrentUser(); // نضمن تحديث بيانات المستخدم قبل فتح أي صفحة
+
         const targetPageId = this.dataset.page;
         if (!targetPageId) return;
 
         sessionStorage.setItem('lastVisitedPage', targetPageId);
 
-        // --- إيقاف الاشتراكات القديمة قبل الانتقال لصفحة جديدة ---
         if (mapSubscription) {
             supabaseClient.removeChannel(mapSubscription);
             mapSubscription = null;
@@ -4928,8 +4955,7 @@ navLinks.forEach(link => {
             targetPage.classList.remove('hidden');
         }
 
-        // ==================== بداية التعديل المهم ====================
-        // استدعاء الدوال الخاصة بكل صفحة عند الحاجة
+        // استدعاء الدوال الخاصة بكل صفحة (هذا الجزء يبقى كما هو)
         if (targetPageId === 'page-clients') fetchClients();
         if (targetPageId === 'page-users') fetchUsers();
         if (targetPageId === 'page-jobs') fetchJobs();
@@ -4942,12 +4968,9 @@ navLinks.forEach(link => {
         if (targetPageId === 'page-guard-attendance') loadGuardAttendancePage();
         if (targetPageId === 'page-patrol') loadSupervisorPatrolPage();
         if (targetPageId === 'page-contracts') fetchContracts();
-        
-        
-        // --- الأسطر الجديدة الخاصة بالهيكلة الجديدة للموارد البشرية ---
         if (targetPageId === 'page-vacancies') loadVacancyTabData();
         if (targetPageId === 'page-employees') loadEmployeeTabData();
-        if (targetPageId === 'page-requests-review') loadRequestsReviewPage(); // <-- دالة جديدة سننشئها
+        if (targetPageId === 'page-requests-review') loadRequestsReviewPage();
         if (targetPageId === 'page-hiring') loadHiringPage();
         if (targetPageId === 'page-penalties') loadPenaltiesPage();
         if (targetPageId === 'page-coverage-requests') loadCoverageRequestsPage();
@@ -4975,15 +4998,12 @@ navLinks.forEach(link => {
         if (targetPageId === 'page-loan-requests') loadLoanRequests();
         if (targetPageId === 'page-hr-attendance-log') loadHrAttendanceLogPage();
         if (targetPageId === 'page-payroll') {
-    // لا نفعل شيئاً عند فتح الصفحة، ننتظر المستخدم يضغط على زر التوليد
-    document.getElementById('payroll-results-container').innerHTML = '<p style="text-align: center;">الرجاء اختيار الشهر والضغط على "توليد المسير" لعرض البيانات.</p>';
-}
+            document.getElementById('payroll-results-container').innerHTML = '<p style="text-align: center;">الرجاء اختيار الشهر والضغط على "توليد المسير" لعرض البيانات.</p>';
+        }
         if (targetPageId === 'page-hr-data-entry') {
-    // لا حاجة لتحميل أي شيء مسبقًا، الصفحة جاهزة للتفاعل
-    document.getElementById('import-results-container').innerHTML = '';
-}
+            document.getElementById('import-results-container').innerHTML = '';
+        }
 
-        // --- تشغيل اشتراك طلبات الحارس ---
         if (targetPageId === 'page-my-requests') {
             loadMyRequestsPage();
             requestsSubscription = supabaseClient.channel('public:employee_requests:my_requests')
@@ -4998,7 +5018,6 @@ navLinks.forEach(link => {
                 .subscribe();
         }
 
-        // --- تشغيل اشتراك طلبات المشرف ---
         if (targetPageId === 'page-permission-requests') {
             loadPermissionRequests();
             requestsSubscription = supabaseClient.channel('public:employee_requests:all_permissions')
@@ -5014,6 +5033,10 @@ navLinks.forEach(link => {
         }
     });
 });
+// ==========================================================
+// ===    نهاية الاستبدال الكامل لمنطق التنقل بين الصفحات    ===
+// ==========================================================
+
 // ===================== نهاية الاستبدال =====================
 
 
@@ -5996,17 +6019,6 @@ if (event.target.closest('#check-in-btn')) {
     checkInBtn.disabled = true;
     checkInBtn.innerHTML = '<i class="ph-fill ph-spinner-gap animate-spin"></i> التحقق...';
 
-    // --- إضافة جديدة: محاولة تفعيل صلاحيات الموقع للإطارات الداخلية ---
-    try {
-        if (window.frameElement) {
-            window.frameElement.setAttribute('allow', 'geolocation');
-        }
-    } catch (e) {
-        console.warn("Could not set iframe geolocation policy:", e);
-    }
-    // --- نهاية الإضافة ---
-
-    // دالة مخصصة لمعالجة أخطاء تحديد الموقع وعرضها للمستخدم
     const handleLocationError = (geoError) => {
         console.error('Geolocation Error:', geoError); // لطباعة الخطأ الفعلي في الكونسول
         let title = 'خطأ في تحديد الموقع';
@@ -6030,129 +6042,92 @@ if (event.target.closest('#check-in-btn')) {
                 message = geoError.message || 'فشل النظام في الوصول لموقعك. يرجى المحاولة مرة أخرى.';
         }
         
-        showCustomAlert(title, message, 'error'); // استخدام نظام التنبيهات المخصص
+        showCustomAlert(title, message, 'error');
         checkInBtn.disabled = false;
         checkInBtn.innerHTML = 'تسجيل حضور';
     };
 
     try {
-        // 1. التحقق من وجود شاغر وجدول للمستخدم
-        if (!currentUser.vacancy_id) {
-            throw new Error('أنت غير معين على شاغر وظيفي حالياً، لا يمكن تحديد ورديتك.');
-        }
-        const { data: vacancy, error: vacancyError } = await supabaseClient
-            .from('job_vacancies')
-            .select('schedule_details, contract_id, specific_location') // جلب البيانات اللازمة للنطاق الجغرافي
-            .eq('id', currentUser.vacancy_id)
-            .single();
-
-        if (vacancyError || !vacancy || !vacancy.schedule_details || vacancy.schedule_details.length === 0) {
-            throw new Error('لم يتم العثور على جدول ورديات لك. يرجى مراجعة الإدارة.');
-        }
+        let shift, siteCoords, radius, contractId; // أضفنا متغير لمعرف العقد
         
-        // 2. التحقق من بيانات العقد والموقع الجغرافي
-        const { data: contract, error: contractError } = await supabaseClient
-            .from('contracts')
-            .select('contract_locations')
-            .eq('id', vacancy.contract_id)
-            .single();
+        if (!currentUser.vacancy_id) throw new Error('أنت غير معين على شاغر وظيفي حالياً.');
+        
+        // جلب بيانات الشاغر والعقد المرتبط به
+        const { data: vacancy, error: e1 } = await supabaseClient.from('job_vacancies').select('contract_id, specific_location, schedule_details').eq('id', currentUser.vacancy_id).single();
+        if (e1 || !vacancy) throw new Error('لم يتم العثور على بيانات الشاغر الوظيفي الخاص بك.');
+        
+        contractId = vacancy.contract_id; // تخزين معرف العقد
+        if (!contractId) throw new Error('الشاغر الوظيفي غير مرتبط بعقد.');
 
-        if (contractError || !contract || !contract.contract_locations) {
-            throw new Error('لا يمكن العثور على بيانات العقد المرتبط بالشاغر.');
-        }
+        if (!vacancy.schedule_details?.[0]) throw new Error('لم يتم العثور على جدول ورديات لك.');
+        shift = vacancy.schedule_details[0];
+
+        const { data: contract, error: e2 } = await supabaseClient.from('contracts').select('contract_locations').eq('id', contractId).single();
+        if (e2 || !contract) throw new Error('لا يمكن العثور على بيانات العقد المرتبط بك.');
 
         const locationData = contract.contract_locations.find(loc => loc.name === vacancy.specific_location);
-        if (!locationData || !locationData.geofence_link) {
-            throw new Error('لم يتم تحديد إحداثيات الموقع أو النطاق الجغرافي في العقد.');
-        }
+        if (!locationData || !locationData.geofence_link) throw new Error('لم يتم تحديد إحداثيات الموقع في العقد.');
+        
+        siteCoords = parseCoordinates(locationData.geofence_link);
+        radius = locationData.geofence_radius || 200;
 
-        const siteCoords = parseCoordinates(locationData.geofence_link);
-        const radius = locationData.geofence_radius || 200; // 200 متر كقيمة افتراضية
-
-        if (!siteCoords) {
-             throw new Error('إحداثيات موقع العمل في العقد غير صالحة.');
-        }
-
-        const shift = vacancy.schedule_details[0];
         const dayMap = {Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6};
         const todayIndex = new Date().getDay();
         const todayKey = Object.keys(dayMap).find(key => dayMap[key] === todayIndex);
-
-        if (!shift.days.includes(todayKey)) {
-            throw new Error('ليس لديك وردية مجدولة لهذا اليوم.');
-        }
-
-        // 3. حساب أوقات الدوام المسموح بها
+        if (!shift.days.includes(todayKey)) throw new Error('ليس لديك وردية مجدولة لهذا اليوم.');
+        
         const now = new Date();
         const [startHours, startMinutes] = shift.start_time.split(':');
-        
         const shiftStartTime = new Date();
         shiftStartTime.setHours(startHours, startMinutes, 0, 0);
-
-        const allowedCheckinTime = new Date(shiftStartTime.getTime() - 15 * 60 * 1000); // 15 دقيقة قبل الوردية
-
-        // 4. التحقق إذا كان الوقت مبكراً جداً
-        if (now < allowedCheckinTime) {
-            const remainingMs = allowedCheckinTime - now;
-            const remainingMinutes = Math.ceil(remainingMs / 60000);
-            const shiftTimeFormatted = formatTimeAMPM(shift.start_time);
-            const alertMessage = `موعد ورديتك هو الساعة ${shiftTimeFormatted}. يمكنك تسجيل الحضور قبل 15 دقيقة فقط. باقي على وقت الحضور: ${remainingMinutes} دقيقة تقريباً.`;
-            
-            throw new Error(alertMessage);
+        const allowedCheckinTime = new Date(shiftStartTime.getTime() - 15 * 60 * 1000);
+        if (now < allowedCheckinTime) throw new Error(`الوقت مبكر جداً. ورديتك تبدأ الساعة ${formatTimeAMPM(shift.start_time)}.`);
+        
+        if (!siteCoords || typeof siteCoords.lat !== 'number' || typeof siteCoords.lng !== 'number') {
+            throw new Error('إحداثيات موقع العمل في العقد غير صالحة أو غير مسجلة.');
         }
-
-        // 5. إذا كان الوقت مناسباً، قم بطلب الموقع والمتابعة
-        checkInBtn.innerHTML = '<i class="ph-fill ph-spinner-gap animate-spin"></i> جاري تحديد موقعك...';
+        
+        checkInBtn.innerHTML = '<i class="ph-fill ph-spinner-gap animate-spin"></i> تحديد موقعك...';
         
         navigator.geolocation.getCurrentPosition(async (position) => {
             try {
                 const guardCoords = { lat: position.coords.latitude, lng: position.coords.longitude };
                 const distance = calculateDistance(siteCoords, guardCoords);
-
-                // التحقق من المسافة
-                if (distance > radius) {
-                    throw new Error(`أنت خارج نطاق العمل المسموح به. المسافة الحالية من الموقع هي حوالي ${Math.round(distance)} متر.`);
-                }
+                if (distance > radius) throw new Error(`أنت خارج نطاق العمل. المسافة الحالية: ${Math.round(distance)} متر.`);
                 
-                // تسجيل الحضور في قاعدة البيانات
                 const { error: insertError } = await supabaseClient.from('attendance').insert({
                     guard_id: currentUser.id,
                     guard_name: currentUser.name,
+                    vacancy_id: currentUser.vacancy_id,
+                    contract_id: contractId,
                     checkin_lat: guardCoords.lat,
                     checkin_lon: guardCoords.lng,
                     status: 'حاضر'
                 });
 
                 if (insertError) {
-                    // معالجة الأخطاء المحتملة من قاعدة البيانات
                     throw new Error('حدث خطأ أثناء محاولة تسجيل حضورك في قاعدة البيانات.');
                 }
                 
                 showCustomAlert('نجاح', 'تم تسجيل حضورك بنجاح.', 'success');
-                loadAttendancePage(); // تحديث الواجهة لإظهار حالة الحضور الجديدة
-
+                loadAttendancePage();
             } catch (innerError) {
-                // هذا يلتقط الأخطاء داخل دالة تحديد الموقع (مثل الخروج عن النطاق)
                 showCustomAlert('خطأ', innerError.message, 'error');
                 checkInBtn.disabled = false;
                 checkInBtn.innerHTML = 'تسجيل حضور';
             }
         }, handleLocationError, { 
-            enableHighAccuracy: true, // طلب دقة عالية
-            timeout: 15000,          // مهلة 15 ثانية
-            maximumAge: 0            // طلب قراءة جديدة للموقع دائماً
+            enableHighAccuracy: true,
+            timeout: 15000,
+            maximumAge: 0
         });
 
     } catch (error) {
-        // هذا الجزء يلتقط أي خطأ يحدث في الخطوات الأولى (مثل عدم وجود وردية أو الوقت مبكر)
-        showCustomAlert('تنبيه', error.message, 'error');
+        showCustomAlert('خطأ', error.message, 'error');
         checkInBtn.disabled = false;
         checkInBtn.innerHTML = 'تسجيل حضور';
     }
 }
-// ==========================================================
-// ===    نهاية الاستبدال الكامل لمنطق زر تسجيل الحضور    ===
-// ==========================================================
 
 // نهاية الاستبدال
 
@@ -9093,7 +9068,6 @@ if (event.target.closest('#save-employee-btn')) {
         const assignedShiftElement = document.getElementById('employee-shift');
         const assignedShift = (assignedShiftElement && assignedShiftElement.value) ? JSON.parse(assignedShiftElement.value) : null;
         
-        // 1. بناء كائن البيانات الأساسي
         let profileData = {
             name: document.getElementById('employee-name').value,
             start_of_work_date: document.getElementById('employee-start-date').value || null,
@@ -9113,21 +9087,24 @@ if (event.target.closest('#save-employee-btn')) {
             assigned_shift: null
         };
 
-        // 2. إضافة البيانات المعتمدة على الدور
         if (role === 'ادارة العمليات') {
             profileData.region = document.getElementById('assign-region-select').value;
         } else if (role === 'مشرف') {
-            const selectedProjects = Array.from(document.querySelectorAll('#assign-project-checkbox-container input:checked'))
-                                          .map(checkbox => checkbox.value);
-            profileData.project = selectedProjects;
+            // --- هنا تم التصحيح الرئيسي لمنطق الحفظ ---
+            const projectContainer = document.getElementById('assign-project-checkbox-container');
+            if (projectContainer) {
+                const selectedProjects = Array.from(projectContainer.querySelectorAll('input[type="checkbox"]:checked'))
+                                              .map(checkbox => checkbox.value);
+                profileData.project = selectedProjects;
+            } else {
+                profileData.project = []; // في حال عدم وجود الحاوية، نرسل مصفوفة فارغة
+            }
         } else if (role === 'حارس أمن') {
             profileData.vacancy_id = document.getElementById('employee-vacancy').value || null;
             profileData.contract_id = document.getElementById('employee-contract').value || null;
             profileData.assigned_shift = assignedShift;
-            // -- بداية التعديل --
             const singleProject = document.getElementById('employee-project-display').value;
-            profileData.project = singleProject ? [singleProject] : []; // نحفظه كقائمة من عنصر واحد
-            // -- نهاية التعديل --
+            profileData.project = singleProject ? [singleProject] : [];
             profileData.location = document.getElementById('employee-location-display').value;
             profileData.city = document.getElementById('employee-city').value;
             profileData.region = document.getElementById('employee-region').value;
@@ -9138,50 +9115,29 @@ if (event.target.closest('#save-employee-btn')) {
         }
 
         if (!profileData.name || !profileData.role) throw new Error('الرجاء تعبئة حقول الاسم والدور.');
-
-        // 3. تنفيذ عملية الحفظ بناءً على وضع الإنشاء
+        
         if (creationMode === 'update') {
             const newPassword = document.getElementById('employee-password').value;
-
-            // --- الخطوة 1: تحديث كلمة المرور أولاً (فقط إذا تم إدخالها) ---
             if (newPassword && newPassword.trim() !== '') {
-                if (newPassword.length < 6) {
-                    throw new Error('كلمة المرور يجب أن تكون 6 أحرف على الأقل.');
-                }
-                // --- إضافة تحقق مهم جداً ---
-                if (!authId) {
-                    throw new Error('لا يمكن تحديث كلمة المرور. معرّف المصادقة الخاص بالموظف مفقود.');
-                }
+                if (newPassword.length < 6) throw new Error('كلمة المرور يجب أن تكون 6 أحرف على الأقل.');
+                if (!authId) throw new Error('لا يمكن تحديث كلمة المرور. معرّف المصادقة الخاص بالموظف مفقود.');
                 
                 const { data, error: passwordError } = await supabaseClient.functions.invoke('update-employee-password', {
                     body: { auth_id: authId, new_password: newPassword }
                 });
-
-                // التحقق من وجود خطأ مرسل من الدالة نفسها
-                if (passwordError || (data && data.error)) {
-                    throw new Error(passwordError?.message || data.error || 'فشل تحديث كلمة المرور.');
-                }
+                if (passwordError || (data && data.error)) throw new Error(passwordError?.message || data.error || 'فشل تحديث كلمة المرور.');
             }
 
-            // --- الخطوة 2: تحديث باقي بيانات الموظف ---
             const { error: updateError } = await supabaseClient.from('users').update(profileData).eq('id', employeeId);
             if (updateError) throw updateError;
 
-            // --- الخطوة 3: تحديث حالة الشاغر إذا لزم الأمر ---
             if (profileData.vacancy_id && profileData.employment_status !== 'اجازة') {
                 await supabaseClient.from('job_vacancies').update({ status: 'closed' }).eq('id', profileData.vacancy_id);
             }
             
             alert('تم تحديث بيانات الموظف بنجاح.');
 
-        } else if (creationMode === 'request') {
-            const requestDetails = { ...profileData, id_number: document.getElementById('employee-id-number').value, password: document.getElementById('employee-password').value };
-            if (!requestDetails.id_number || !requestDetails.password) throw new Error('عند تقديم طلب، يجب إدخال رقم الهوية وكلمة المرور.');
-            const { error } = await supabaseClient.from('employee_requests').insert([{ request_type: 'hiring', user_id: currentUser.id, details: requestDetails, status: 'معلق' }]);
-            if (error) throw error;
-            alert('تم إرسال طلب التوظيف بنجاح.');
-
-        } else { // Direct creation
+        } else { 
             const fullProfileData = { ...profileData, id_number: document.getElementById('employee-id-number').value };
             const newPassword = document.getElementById('employee-password').value;
             if (!fullProfileData.id_number || !newPassword || newPassword.length < 6) throw new Error('يجب إدخال رقم هوية وكلمة مرور (6 أحرف على الأقل) للموظف الجديد.');
