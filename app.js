@@ -6020,47 +6020,25 @@ if (event.target.closest('#check-in-btn')) {
     checkInBtn.innerHTML = '<i class="ph-fill ph-spinner-gap animate-spin"></i> التحقق...';
 
     const handleLocationError = (geoError) => {
-        console.error('Geolocation Error:', geoError); // لطباعة الخطأ الفعلي في الكونسول
+        console.error('Geolocation Error:', geoError);
         let title = 'خطأ في تحديد الموقع';
-        let message;
-
-        // رسائل مخصصة لكل نوع من أنواع الأخطاء
-        switch (geoError.code) {
-            case 1: // PERMISSION_DENIED
-                title = 'صلاحية الموقع مرفوضة';
-                message = 'لا يمكن تسجيل الحضور لأنك رفضت منح صلاحية الوصول للموقع. يرجى تفعيلها من إعدادات المتصفح ثم تحديث الصفحة.';
-                break;
-            case 2: // POSITION_UNAVAILABLE
-                title = 'الموقع غير متاح';
-                message = 'لم يتمكن الجهاز من تحديد موقعك الحالي. قد يكون السبب ضعف إشارة GPS أو مشكلة في الشبكة. حاول مرة أخرى من مكان مفتوح.';
-                break;
-            case 3: // TIMEOUT
-                title = 'انتهى الوقت';
-                message = 'استغرق طلب تحديد الموقع وقتاً طويلاً جداً. يرجى التحقق من اتصالك بالإنترنت والمحاولة مرة أخرى.';
-                break;
-            default:
-                message = geoError.message || 'فشل النظام في الوصول لموقعك. يرجى المحاولة مرة أخرى.';
-        }
-        
+        let message = 'فشل النظام في الوصول لموقعك. يرجى التأكد من تفعيل خدمات الموقع والمحاولة مرة أخرى.';
         showCustomAlert(title, message, 'error');
         checkInBtn.disabled = false;
         checkInBtn.innerHTML = 'تسجيل حضور';
     };
 
     try {
-        let shift, siteCoords, radius, contractId; // أضفنا متغير لمعرف العقد
-        
         if (!currentUser.vacancy_id) throw new Error('أنت غير معين على شاغر وظيفي حالياً.');
         
-        // جلب بيانات الشاغر والعقد المرتبط به
         const { data: vacancy, error: e1 } = await supabaseClient.from('job_vacancies').select('contract_id, specific_location, schedule_details').eq('id', currentUser.vacancy_id).single();
         if (e1 || !vacancy) throw new Error('لم يتم العثور على بيانات الشاغر الوظيفي الخاص بك.');
         
-        contractId = vacancy.contract_id; // تخزين معرف العقد
+        const contractId = vacancy.contract_id;
         if (!contractId) throw new Error('الشاغر الوظيفي غير مرتبط بعقد.');
 
         if (!vacancy.schedule_details?.[0]) throw new Error('لم يتم العثور على جدول ورديات لك.');
-        shift = vacancy.schedule_details[0];
+        const shift = vacancy.schedule_details[0];
 
         const { data: contract, error: e2 } = await supabaseClient.from('contracts').select('contract_locations').eq('id', contractId).single();
         if (e2 || !contract) throw new Error('لا يمكن العثور على بيانات العقد المرتبط بك.');
@@ -6068,62 +6046,56 @@ if (event.target.closest('#check-in-btn')) {
         const locationData = contract.contract_locations.find(loc => loc.name === vacancy.specific_location);
         if (!locationData || !locationData.geofence_link) throw new Error('لم يتم تحديد إحداثيات الموقع في العقد.');
         
-        siteCoords = parseCoordinates(locationData.geofence_link);
-        radius = locationData.geofence_radius || 200;
+        const siteCoords = parseCoordinates(locationData.geofence_link);
+        if (!siteCoords) throw new Error('إحداثيات موقع العمل في العقد غير صالحة.');
+        const radius = locationData.geofence_radius || 200;
 
-        const dayMap = {Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6};
-        const todayIndex = new Date().getDay();
-        const todayKey = Object.keys(dayMap).find(key => dayMap[key] === todayIndex);
-        if (!shift.days.includes(todayKey)) throw new Error('ليس لديك وردية مجدولة لهذا اليوم.');
-        
-        const now = new Date();
-        const [startHours, startMinutes] = shift.start_time.split(':');
-        const shiftStartTime = new Date();
-        shiftStartTime.setHours(startHours, startMinutes, 0, 0);
-        const allowedCheckinTime = new Date(shiftStartTime.getTime() - 15 * 60 * 1000);
-        if (now < allowedCheckinTime) throw new Error(`الوقت مبكر جداً. ورديتك تبدأ الساعة ${formatTimeAMPM(shift.start_time)}.`);
-        
-        if (!siteCoords || typeof siteCoords.lat !== 'number' || typeof siteCoords.lng !== 'number') {
-            throw new Error('إحداثيات موقع العمل في العقد غير صالحة أو غير مسجلة.');
-        }
-        
         checkInBtn.innerHTML = '<i class="ph-fill ph-spinner-gap animate-spin"></i> تحديد موقعك...';
         
         navigator.geolocation.getCurrentPosition(async (position) => {
-            try {
-                const guardCoords = { lat: position.coords.latitude, lng: position.coords.longitude };
-                const distance = calculateDistance(siteCoords, guardCoords);
-                if (distance > radius) throw new Error(`أنت خارج نطاق العمل. المسافة الحالية: ${Math.round(distance)} متر.`);
-                
-                const { error: insertError } = await supabaseClient.from('attendance').insert({
-                    guard_id: currentUser.id,
-                    guard_name: currentUser.name,
-                    vacancy_id: currentUser.vacancy_id,
-                    contract_id: contractId,
-                    checkin_lat: guardCoords.lat,
-                    checkin_lon: guardCoords.lng,
-                    status: 'حاضر'
-                });
-
-                if (insertError) {
-                    throw new Error('حدث خطأ أثناء محاولة تسجيل حضورك في قاعدة البيانات.');
-                }
-                
-                showCustomAlert('نجاح', 'تم تسجيل حضورك بنجاح.', 'success');
-                loadAttendancePage();
-            } catch (innerError) {
-                showCustomAlert('خطأ', innerError.message, 'error');
+            const guardCoords = { lat: position.coords.latitude, lng: position.coords.longitude };
+            const distance = calculateDistance(siteCoords, guardCoords);
+            if (distance > radius) {
+                showCustomAlert('خطأ', `أنت خارج نطاق العمل. المسافة الحالية: ${Math.round(distance)} متر.`, 'error');
                 checkInBtn.disabled = false;
                 checkInBtn.innerHTML = 'تسجيل حضور';
+                return;
             }
+            
+            // --- هنا الجزء الجديد والمهم للتشخيص ---
+            const { data, error: insertError } = await supabaseClient.from('attendance').insert({
+                guard_id: currentUser.id,
+                guard_name: currentUser.name,
+                vacancy_id: currentUser.vacancy_id,
+                contract_id: contractId,
+                checkin_lat: guardCoords.lat,
+                checkin_lon: guardCoords.lng,
+                status: 'حاضر'
+            });
+
+            if (insertError) {
+                // سنقوم بعرض رسالة الخطأ التفصيلية في alert
+                const detailedMessage = `فشل حفظ البيانات في قاعدة البيانات.\n\nالرسالة: ${insertError.message}\n\nالتفاصيل: ${insertError.details}\n\nالكود: ${insertError.code}`;
+                alert(detailedMessage); // هذا السطر سيعرض الخطأ بالتفصيل على الجوال
+
+                // ونعرض رسالة للمستخدم في الواجهة أيضاً
+                showCustomAlert('خطأ في قاعدة البيانات', 'فشلت عملية الحفظ، تم عرض التفاصيل للمشرف.', 'error');
+                checkInBtn.disabled = false;
+                checkInBtn.innerHTML = 'تسجيل حضور';
+            } else {
+                showCustomAlert('نجاح', 'تم تسجيل حضورك بنجاح.', 'success');
+                loadAttendancePage();
+            }
+            // --- نهاية جزء التشخيص ---
+
         }, handleLocationError, { 
             enableHighAccuracy: true,
-            timeout: 15000,
+            timeout: 20000, // زيادة المهلة إلى 20 ثانية
             maximumAge: 0
         });
 
     } catch (error) {
-        showCustomAlert('خطأ', error.message, 'error');
+        showCustomAlert('خطأ في الإعدادات', error.message, 'error');
         checkInBtn.disabled = false;
         checkInBtn.innerHTML = 'تسجيل حضور';
     }
