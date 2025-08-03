@@ -6028,23 +6028,7 @@ if (event.target.closest('#check-in-btn')) {
     const handleLocationError = (geoError) => {
         console.error('Geolocation Error:', geoError);
         let title = 'خطأ في تحديد الموقع';
-        let message;
-        switch (geoError.code) {
-            case 1:
-                title = 'صلاحية الموقع مرفوضة';
-                message = 'لا يمكن تسجيل الحضور لأنك رفضت منح صلاحية الوصول للموقع. يرجى تفعيلها من إعدادات المتصفح ثم تحديث الصفحة.';
-                break;
-            case 2:
-                title = 'الموقع غير متاح';
-                message = 'لم يتمكن الجهاز من تحديد موقعك الحالي. قد يكون السبب ضعف إشارة GPS أو مشكلة في الشبكة. حاول مرة أخرى من مكان مفتوح.';
-                break;
-            case 3:
-                title = 'انتهى الوقت';
-                message = 'استغرق طلب تحديد الموقع وقتاً طويلاً جداً. يرجى التحقق من اتصالك بالإنترنت والمحاولة مرة أخرى.';
-                break;
-            default:
-                message = 'فشل النظام في الوصول لموقعك. يرجى المحاولة مرة أخرى.';
-        }
+        let message = 'فشل النظام في الوصول لموقعك. يرجى التأكد من تفعيل خدمات الموقع والمحاولة مرة أخرى.';
         showCustomAlert(title, message, 'error');
         checkInBtn.disabled = false;
         checkInBtn.innerHTML = 'تسجيل حضور';
@@ -6053,7 +6037,14 @@ if (event.target.closest('#check-in-btn')) {
     try {
         if (!currentUser.vacancy_id) throw new Error('أنت غير معين على شاغر وظيفي حالياً.');
         
-        const { data: vacancy, error: e1 } = await supabaseClient.from('job_vacancies').select('contract_id, specific_location, schedule_details').eq('id', currentUser.vacancy_id).single();
+        // --- بداية التعديل 1: جلب كل البيانات المطلوبة من الشاغر ---
+        const { data: vacancy, error: e1 } = await supabaseClient
+            .from('job_vacancies')
+            .select('contract_id, project, location, region, specific_location, schedule_details')
+            .eq('id', currentUser.vacancy_id)
+            .single();
+        // --- نهاية التعديل 1 ---
+
         if (e1 || !vacancy) throw new Error('لم يتم العثور على بيانات الشاغر الوظيفي الخاص بك.');
         
         const contractId = vacancy.contract_id;
@@ -6072,18 +6063,6 @@ if (event.target.closest('#check-in-btn')) {
         if (!siteCoords) throw new Error('إحداثيات موقع العمل في العقد غير صالحة.');
         const radius = locationData.geofence_radius || 200;
 
-        const dayMap = {Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6};
-        const todayIndex = new Date().getDay();
-        const todayKey = Object.keys(dayMap).find(key => dayMap[key] === todayIndex);
-        if (!shift.days.includes(todayKey)) throw new Error('ليس لديك وردية مجدولة لهذا اليوم.');
-        
-        const now = new Date();
-        const [startHours, startMinutes] = shift.start_time.split(':');
-        const shiftStartTime = new Date();
-        shiftStartTime.setHours(startHours, startMinutes, 0, 0);
-        const allowedCheckinTime = new Date(shiftStartTime.getTime() - 15 * 60 * 1000);
-        if (now < allowedCheckinTime) throw new Error(`الوقت مبكر جداً. ورديتك تبدأ الساعة ${formatTimeAMPM(shift.start_time)}.`);
-        
         checkInBtn.innerHTML = '<i class="ph-fill ph-spinner-gap animate-spin"></i> تحديد موقعك...';
         
         navigator.geolocation.getCurrentPosition(async (position) => {
@@ -6092,14 +6071,20 @@ if (event.target.closest('#check-in-btn')) {
                 const distance = calculateDistance(siteCoords, guardCoords);
                 if (distance > radius) throw new Error(`أنت خارج نطاق العمل. المسافة الحالية: ${Math.round(distance)} متر.`);
                 
+                // --- بداية التعديل 2: إضافة كل الحقول المطلوبة عند الحفظ ---
                 const { error: insertError } = await supabaseClient.from('attendance').insert({
                     guard_id: currentUser.id,
                     guard_name: currentUser.name,
                     vacancy_id: currentUser.vacancy_id,
+                    project: vacancy.project,
+                    location: vacancy.specific_location,
+                    region: vacancy.region,
+                    city: vacancy.location,
                     checkin_lat: guardCoords.lat,
                     checkin_lon: guardCoords.lng,
                     status: 'حاضر'
                 });
+                // --- نهاية التعديل 2 ---
 
                 if (insertError) {
                     console.error('Detailed Supabase Insert Error:', insertError);
