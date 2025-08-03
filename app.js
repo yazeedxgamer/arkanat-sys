@@ -2161,19 +2161,27 @@ async function startPersistentTracking(userId) {
         stopPersistentTracking();
         let message = 'توقف التتبع بسبب خطأ.';
         if (geoError.code === geoError.PERMISSION_DENIED) {
-            message = `تم إيقاف صلاحية الوصول للموقع، مما أدى لتوقف التتبع. لإعادة تفعيله، يرجى اتباع الإرشادات ثم تحديث الصفحة.`;
+            message = `تم إيقاف صلاحية الوصول للموقع، مما أدى لتوقف التتبع.`;
             showCustomAlert('صلاحية الموقع مطلوبة', message, 'error');
         }
         if(locationStatus) locationStatus.innerHTML = `<p style="color: #dc3545;">${message}</p>`;
     };
 
     try {
-        const { data: user, error: e1 } = await supabaseClient.from('users').select('*, job_vacancies!inner(contract_id, specific_location, schedule_details, project, region)').eq('id', userId).single();
-        if (e1 || !user || !user.job_vacancies) throw new Error('لا يمكن تفعيل التتبع، الموظف غير مرتبط بشاغر.');
+        // --- هنا التعديل: استخدام ربط أكثر مرونة (LEFT JOIN) ---
+        const { data: user, error: e1 } = await supabaseClient
+            .from('users')
+            .select('*, job_vacancies(*, contracts(*))') // <-- هذا السطر هو التعديل
+            .eq('id', userId)
+            .single();
+            
+        if (e1 || !user || !user.job_vacancies) {
+            throw new Error('لا يمكن تفعيل التتبع، الموظف غير مرتبط بشاغر.');
+        }
 
         const vacancy = user.job_vacancies;
-        const { data: contract, error: e3 } = await supabaseClient.from('contracts').select('contract_locations').eq('id', vacancy.contract_id).single();
-        if (e3 || !contract) throw new Error('لا يمكن العثور على بيانات العقد.');
+        const contract = vacancy.contracts;
+        if (!contract) throw new Error('لا يمكن العثور على بيانات العقد.');
 
         const locationData = contract.contract_locations.find(loc => loc.name === vacancy.specific_location);
         if (!locationData || !locationData.geofence_link) throw new Error('لم يتم تحديد إحداثيات الموقع في العقد.');
@@ -2201,16 +2209,14 @@ async function startPersistentTracking(userId) {
                     
                     await supabaseClient.from('attendance').update({ status: 'انسحاب', checkout_at: new Date() }).eq('id', attendanceId);
                     
-                    const { data: managers, error: managersError } = await supabaseClient.from('users')
-                        .select('id').or(`role.eq.ادارة العمليات,role.eq.مشرف`).eq('project', vacancy.project);
+                    const { data: managers, error: managersError } = await supabaseClient.from('users').select('id').or(`role.eq.ادارة العمليات,role.eq.مشرف`).filter('project', 'cs', `{${vacancy.project}}`);
 
                     if (!managersError && managers) {
                         const managerIds = managers.map(m => m.id);
                         sendNotification(
                             managerIds,
                             'تنبيه: انسحاب حارس',
-                            `الحارس "${user.name}" انسحب من موقعه في مشروع "${vacancy.project}". يرجى المتابعة.`,
-                            '#'
+                            `الحارس "${user.name}" انسحب من موقعه في مشروع "${vacancy.project}". يرجى المتابعة.`
                         );
                     }
                     loadAttendancePage();
@@ -6022,7 +6028,23 @@ if (event.target.closest('#check-in-btn')) {
     const handleLocationError = (geoError) => {
         console.error('Geolocation Error:', geoError);
         let title = 'خطأ في تحديد الموقع';
-        let message = 'فشل النظام في الوصول لموقعك. يرجى التأكد من تفعيل خدمات الموقع والمحاولة مرة أخرى.';
+        let message;
+        switch (geoError.code) {
+            case 1:
+                title = 'صلاحية الموقع مرفوضة';
+                message = 'لا يمكن تسجيل الحضور لأنك رفضت منح صلاحية الوصول للموقع. يرجى تفعيلها من إعدادات المتصفح ثم تحديث الصفحة.';
+                break;
+            case 2:
+                title = 'الموقع غير متاح';
+                message = 'لم يتمكن الجهاز من تحديد موقعك الحالي. قد يكون السبب ضعف إشارة GPS أو مشكلة في الشبكة. حاول مرة أخرى من مكان مفتوح.';
+                break;
+            case 3:
+                title = 'انتهى الوقت';
+                message = 'استغرق طلب تحديد الموقع وقتاً طويلاً جداً. يرجى التحقق من اتصالك بالإنترنت والمحاولة مرة أخرى.';
+                break;
+            default:
+                message = 'فشل النظام في الوصول لموقعك. يرجى المحاولة مرة أخرى.';
+        }
         showCustomAlert(title, message, 'error');
         checkInBtn.disabled = false;
         checkInBtn.innerHTML = 'تسجيل حضور';
@@ -6050,6 +6072,18 @@ if (event.target.closest('#check-in-btn')) {
         if (!siteCoords) throw new Error('إحداثيات موقع العمل في العقد غير صالحة.');
         const radius = locationData.geofence_radius || 200;
 
+        const dayMap = {Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6};
+        const todayIndex = new Date().getDay();
+        const todayKey = Object.keys(dayMap).find(key => dayMap[key] === todayIndex);
+        if (!shift.days.includes(todayKey)) throw new Error('ليس لديك وردية مجدولة لهذا اليوم.');
+        
+        const now = new Date();
+        const [startHours, startMinutes] = shift.start_time.split(':');
+        const shiftStartTime = new Date();
+        shiftStartTime.setHours(startHours, startMinutes, 0, 0);
+        const allowedCheckinTime = new Date(shiftStartTime.getTime() - 15 * 60 * 1000);
+        if (now < allowedCheckinTime) throw new Error(`الوقت مبكر جداً. ورديتك تبدأ الساعة ${formatTimeAMPM(shift.start_time)}.`);
+        
         checkInBtn.innerHTML = '<i class="ph-fill ph-spinner-gap animate-spin"></i> تحديد موقعك...';
         
         navigator.geolocation.getCurrentPosition(async (position) => {
@@ -6058,7 +6092,6 @@ if (event.target.closest('#check-in-btn')) {
                 const distance = calculateDistance(siteCoords, guardCoords);
                 if (distance > radius) throw new Error(`أنت خارج نطاق العمل. المسافة الحالية: ${Math.round(distance)} متر.`);
                 
-                // --- هنا التصحيح: تم حذف contract_id من البيانات المرسلة ---
                 const { error: insertError } = await supabaseClient.from('attendance').insert({
                     guard_id: currentUser.id,
                     guard_name: currentUser.name,
