@@ -2390,7 +2390,7 @@ async function initializeMap() {
                 const popupContent = `
                     <div style="font-family: 'Cairo', sans-serif;">
                         <h4 style="margin: 0 0 5px 0;">${guard.name}</h4>
-                        <p style="margin: 0 0 5px 0;"><strong>المشروع:</strong> ${guard.project || 'غير محدد'}</p>
+                        <p style="margin: 0 0 5px 0;"><strong>المشروع:</strong> ${Array.isArray(guard.project) ? guard.project.join(', ') : guard.project || 'غير محدد'}</p>
                         <p style="margin: 0 0 8px 0;"><strong>الموقع:</strong> ${guard.location || 'غير محدد'}</p>
                         <small style="color: #6b7280;">آخر تحديث: ${lastUpdate}</small>
                     </div>
@@ -2401,12 +2401,10 @@ async function initializeMap() {
             }
         });
 
-        // --- بداية التعديل: تحويل النص إلى رقم قبل البحث ---
         if (window.zoomToGuardId) {
-            const guardIdToFind = parseInt(window.zoomToGuardId, 10); // تحويل النص لرقم
-
-            if (guardMarkers.has(guardIdToFind)) { // استخدام الرقم للبحث
-                const markerToZoom = guardMarkers.get(guardIdToFind); // استخدام الرقم للجلب
+            const guardIdToFind = parseInt(window.zoomToGuardId, 10);
+            if (guardMarkers.has(guardIdToFind)) {
+                const markerToZoom = guardMarkers.get(guardIdToFind);
                 map.setView(markerToZoom.getLatLng(), 17);
                 markerToZoom.openPopup();
             } else {
@@ -2414,14 +2412,30 @@ async function initializeMap() {
             }
             window.zoomToGuardId = null;
         }
-        // --- نهاية التعديل ---
 
         mapSubscription = supabaseClient.channel('public-locations-and-attendance')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'guard_locations' }, (payload) => {
-                if ((payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') && guardMarkers.has(payload.new.guard_id)) {
-                    const markerToMove = guardMarkers.get(payload.new.guard_id);
+                const guardId = payload.new.guard_id;
+                // --- بداية التعديل: تحديث النافذة المنبثقة مع الوقت الجديد ---
+                if ((payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') && guardMarkers.has(guardId)) {
+                    const markerToMove = guardMarkers.get(guardId);
                     markerToMove.setLatLng([payload.new.latitude, payload.new.longitude]);
+                    
+                    const guardData = allGuardsOnMap.find(g => g.id === guardId);
+                    if (guardData) {
+                        const lastUpdate = new Date(payload.new.created_at).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
+                        const newPopupContent = `
+                            <div style="font-family: 'Cairo', sans-serif;">
+                                <h4 style="margin: 0 0 5px 0;">${guardData.name}</h4>
+                                <p style="margin: 0 0 5px 0;"><strong>المشروع:</strong> ${Array.isArray(guardData.project) ? guardData.project.join(', ') : guardData.project || 'غير محدد'}</p>
+                                <p style="margin: 0 0 8px 0;"><strong>الموقع:</strong> ${guardData.location || 'غير محدد'}</p>
+                                <small style="color: #6b7280;">آخر تحديث: ${lastUpdate}</small>
+                            </div>
+                        `;
+                        markerToMove.setPopupContent(newPopupContent);
+                    }
                 }
+                // --- نهاية التعديل ---
             })
             .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'attendance' }, (payload) => {
                 if (payload.new.checkout_at && guardMarkers.has(payload.new.guard_id)) {
