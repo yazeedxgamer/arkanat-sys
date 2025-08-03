@@ -2167,21 +2167,19 @@ async function loadMapStatistics() {
 // ==================== بداية الاستبدال ====================
 // دالة لبدء التتبع المستمر (النسخة الجديدة مع إرسال إشعارات الانسحاب)
 async function startPersistentTracking(fullUser, attendanceId) {
-    if (window.locationWatcherId) {
-        navigator.geolocation.clearWatch(window.locationWatcherId);
-    }
+    stopPersistentTracking(); // إيقاف أي مؤقت قديم أولاً
+
     const locationStatus = document.getElementById('location-status');
-    if(locationStatus) locationStatus.innerHTML = `<p style="color: #22c55e;">التتبع المباشر فعال.</p>`;
+    if (locationStatus) locationStatus.innerHTML = `<p style="color: #22c55e;">التتبع المباشر فعال.</p>`;
+
+    // يمكنك تغيير هذا الرقم. 30000 تعني 30 ثانية.
+    const UPDATE_INTERVAL_MS = 15000;
 
     const handleTrackingError = (geoError) => {
         console.error("خطأ في التتبع المستمر:", geoError);
         stopPersistentTracking();
-        let message = 'توقف التتبع بسبب خطأ.';
-        if (geoError.code === geoError.PERMISSION_DENIED) {
-            message = `تم إيقاف صلاحية الوصول للموقع، مما أدى لتوقف التتبع.`;
-            showCustomAlert('صلاحية الموقع مطلوبة', message, 'error');
-        }
-        if(locationStatus) locationStatus.innerHTML = `<p style="color: #dc3545;">${message}</p>`;
+        const message = 'توقف التتبع بسبب خطأ في تحديد الموقع.';
+        if (locationStatus) locationStatus.innerHTML = `<p style="color: #dc3545;">${message}</p>`;
     };
 
     try {
@@ -2196,51 +2194,51 @@ async function startPersistentTracking(fullUser, attendanceId) {
         const radius = locationData.geofence_radius || 200;
         if (!siteCoords) throw new Error('إحداثيات الموقع في العقد غير صالحة.');
 
-        window.locationWatcherId = navigator.geolocation.watchPosition(
-            async (position) => {
-                const { latitude, longitude } = position.coords;
-                supabaseClient.from('guard_locations').upsert({ guard_id: fullUser.id, latitude, longitude }, { onConflict: 'guard_id' }).then();
-                supabaseClient.from('guard_location_history').insert({ guard_id: fullUser.id, latitude, longitude }).then();
-
-                const distance = calculateDistance(siteCoords, { lat: latitude, lng: longitude });
-
-                if (distance > radius) {
-                    stopPersistentTracking();
-                    showToast(`تم تسجيل انسحاب للحارس: ${fullUser.name}`, 'error');
+        // دالة ليتم استدعاؤها بشكل دوري
+        const updateLocation = () => {
+            navigator.geolocation.getCurrentPosition(
+                async (position) => {
+                    const { latitude, longitude } = position.coords;
+                    // تحديث الموقع الحالي في جدول المواقع المباشرة
+                    supabaseClient.from('guard_locations').upsert({ guard_id: fullUser.id, latitude, longitude }, { onConflict: 'guard_id' }).then();
                     
-                    await supabaseClient.from('attendance').update({ status: 'انسحاب', checkout_at: new Date() }).eq('id', attendanceId);
-                    
-                    const { data: managers, error: managersError } = await supabaseClient.from('users').select('id').or(`role.eq.ادارة العمليات,role.eq.مشرف`).filter('project', 'cs', `{${vacancy.project}}`);
+                    const distance = calculateDistance(siteCoords, { lat: latitude, lng: longitude });
 
-                    if (!managersError && managers) {
-                        const managerIds = managers.map(m => m.id);
-                        sendNotification(
-                            managerIds,
-                            'تنبيه: انسحاب حارس',
-                            `الحارس "${fullUser.name}" انسحب من موقعه في مشروع "${vacancy.project}". يرجى المتابعة.`
-                        );
+                    if (distance > radius) {
+                        stopPersistentTracking();
+                        showToast(`تم تسجيل انسحاب للحارس: ${fullUser.name}`, 'error');
+                        await supabaseClient.from('attendance').update({ status: 'انسحاب', checkout_at: new Date() }).eq('id', attendanceId);
+                        loadAttendancePage();
                     }
-                    loadAttendancePage();
-                }
-            },
-            handleTrackingError,
-            { enableHighAccuracy: true }
-        );
+                },
+                handleTrackingError,
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+            );
+        };
+
+        // قم بتشغيل الدالة مرة واحدة فوراً
+        updateLocation();
+
+        // ثم قم بتعيينها لتعمل كل فترة زمنية محددة
+        locationUpdateInterval = setInterval(updateLocation, UPDATE_INTERVAL_MS);
 
     } catch(err) {
         console.error("فشل بدء التتبع:", err.message);
-        if(locationStatus) locationStatus.innerHTML = `<p style="color: #dc3545;">${err.message}</p>`;
+        if (locationStatus) locationStatus.innerHTML = `<p style="color: #dc3545;">${err.message}</p>`;
     }
 }
 // ===================== نهاية الاستبدال =====================
 // ===================== نهاية الاستبدال =====================
 
 // دالة جديدة لإيقاف التتبع
+let locationUpdateInterval = null;
+
 function stopPersistentTracking() {
-    if (window.locationWatcherId) {
-        navigator.geolocation.clearWatch(window.locationWatcherId);
-        window.locationWatcherId = null;
-        document.getElementById('location-status').innerHTML = '';
+    if (locationUpdateInterval) {
+        clearInterval(locationUpdateInterval); // نستخدم clearInterval بدلاً من clearWatch
+        locationUpdateInterval = null;
+        const locationStatus = document.getElementById('location-status');
+        if (locationStatus) locationStatus.innerHTML = '';
         console.log('تم إيقاف التتبع المباشر.');
     }
 }
@@ -2379,7 +2377,7 @@ async function initializeMap() {
             .from('users')
             .select('id, name, project, location, guard_locations(latitude, longitude, created_at)')
             .in('id', presentGuardIds)
-            .not('guard_locations', 'is', null); // <-- تم حذف الفاصلة العلوية الزائدة من هنا
+            .not('guard_locations', 'is', null);
 
         if (guardsError) throw guardsError;
 
@@ -2403,10 +2401,12 @@ async function initializeMap() {
             }
         });
 
-        // --- بداية الإضافة: تقريب الخريطة على الحارس المحدد ---
+        // --- بداية التعديل: تحويل النص إلى رقم قبل البحث ---
         if (window.zoomToGuardId) {
-            if (guardMarkers.has(window.zoomToGuardId)) {
-                const markerToZoom = guardMarkers.get(window.zoomToGaurdId); // تصحيح اسم المتغير هنا أيضًا
+            const guardIdToFind = parseInt(window.zoomToGuardId, 10); // تحويل النص لرقم
+
+            if (guardMarkers.has(guardIdToFind)) { // استخدام الرقم للبحث
+                const markerToZoom = guardMarkers.get(guardIdToFind); // استخدام الرقم للجلب
                 map.setView(markerToZoom.getLatLng(), 17);
                 markerToZoom.openPopup();
             } else {
@@ -2414,7 +2414,7 @@ async function initializeMap() {
             }
             window.zoomToGuardId = null;
         }
-        // --- نهاية الإضافة ---
+        // --- نهاية التعديل ---
 
         mapSubscription = supabaseClient.channel('public-locations-and-attendance')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'guard_locations' }, (payload) => {
