@@ -1,0 +1,67 @@
+# supabase/config.toml
+project_id = "tlgyxbdjdhdjgkcndxoi"
+[functions.send-notification]
+enabled = true
+verify_jwt = true
+import_map = "./functions/send-notification/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/send-notification/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/send-notification/*.html" ]
+
+[functions.push-trigger]
+enabled = true
+verify_jwt = true
+import_map = "./functions/push-trigger/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/push-trigger/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/push-trigger/*.html" ]
+
+[functions.admin-reset-password]
+enabled = true
+verify_jwt = true
+import_map = "./functions/admin-reset-password/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/admin-reset-password/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/admin-reset-password/*.html" ]
+
+[functions.admin-impersonate]
+enabled = true
+verify_jwt = true
+import_map = "./functions/admin-impersonate/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/admin-impersonate/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/admin-impersonate/*.html" ]
+
+[functions.assign-coverage-guard]
+enabled = true
+verify_jwt = true
+import_map = "./functions/assign-coverage-guard/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/assign-coverage-guard/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/assign-coverage-guard/*.html" ]
+
+[functions.finalize-coverage-payment]
+enabled = true
+verify_jwt = true
+import_map = "./functions/finalize-coverage-payment/deno.json"
+# Uncomment to specify a custom file path to the entrypoint.
+# Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
+entrypoint = "./functions/finalize-coverage-payment/index.ts"
+# Specifies static files to be bundled with the function. Supports glob patterns.
+# For example, if you want to serve static HTML pages in your function:
+# static_files = [ "./functions/finalize-coverage-payment/*.html" ]

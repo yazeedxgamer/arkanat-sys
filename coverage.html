@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>فرص التوظيف والتغطية - نظام اركانات</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <link rel="stylesheet" href="style.css">
+    <style>
+        body { background-color: #f4f7fa; }
+        .public-container { max-width: 900px; margin: 40px auto; padding: 20px; }
+        .public-header { text-align: center; margin-bottom: 40px; }
+        .public-header img { height: 60px; margin-bottom: 15px; }
+        .public-header h1 { font-size: 2rem; margin: 0; color: #1f2937; }
+        .public-header p { font-size: 1.1rem; color: #6b7280; }
+        .no-shifts { background: white; padding: 40px; text-align: center; border-radius: 8px; font-size: 1.2rem; color: #6b7280; }
+    </style>
+</head>
+<body>
+    <div class="public-container">
+        <div class="public-header">
+            <img src="https://arkanat.com.sa/wp-content/uploads/2024/07/logo.svg" alt="شعار اركانات">
+            <h1>فرص التوظيف المتاحة</h1>
+            <p>انضم لفريقنا أو شارك في تغطية الورديات واحصل على مقابل مادي فوري.</p>
+        </div>
+
+        <div class="tabs" style="justify-content: center;">
+            <a href="#" class="tab-link active" data-tab="coverage-tab"><i class="ph-bold ph-shield-check"></i> فرص التغطية</a>
+            <a href="#" class="tab-link" data-tab="jobs-tab"><i class="ph-bold ph-briefcase"></i> وظائف شاغرة</a>
+        </div>
+
+        <div id="coverage-tab" class="tab-content active">
+            <div id="public-coverage-list" class="contracts-container" style="padding-top: 25px;"></div>
+        </div>
+
+        <div id="jobs-tab" class="tab-content">
+            <div id="public-jobs-list" class="contracts-container" style="padding-top: 25px;"></div>
+        </div>
+    </div>
+
+   <div id="apply-modal" class="modal-overlay hidden">
+        <div class="modal-panel" style="max-width: 500px;">
+            <div class="modal-header"><h4>تقديم على تغطية</h4><button class="modal-close-btn"><i class="ph-bold ph-x"></i></button></div>
+            <form id="coverage-application-form">
+                <div class="modal-body">
+                    <input type="hidden" id="apply-shift-id">
+                    
+                    <div class="form-group" style="background-color: #f8f9fa; padding: 15px; border-radius: 8px; display:flex; align-items:center; gap:15px;">
+                        <input type="checkbox" id="is-employee-checkbox-coverage" style="width: 20px; height: 20px; flex-shrink: 0;">
+                        <label for="is-employee-checkbox-coverage" style="margin:0; font-weight: 700; cursor: pointer;">هل أنت موظف حالي في اركانات؟</label>
+                    </div>
+
+                    <div id="employee-id-field-coverage" class="form-group hidden" style="margin-top:20px;">
+                        <label for="coverage-app-employee-id">رقم الهوية للتحقق</label>
+                        <input type="text" id="coverage-app-employee-id" placeholder="أدخل رقم هويتك المسجل بالنظام">
+                    </div>
+
+                    <div id="external-applicant-fields-coverage">
+                        <div class="form-group"><label for="apply-full-name">الاسم الكامل</label><input type="text" id="apply-full-name"></div>
+                        <div class="form-group"><label for="apply-id-number">رقم الهوية الوطنية</label><input type="text" id="apply-id-number"></div>
+                        <div class="form-group"><label for="apply-phone">رقم الجوال</label><input type="tel" id="apply-phone"></div>
+                        <div class="form-group"><label for="apply-iban">رقم الآيبان (IBAN)</label><input type="text" id="apply-iban"></div>
+                        <div class="form-group"><label for="apply-bank-name">اسم البنك</label><input type="text" id="apply-bank-name" placeholder="مثال: الراجحي"></div>
+                        <hr style="margin: 25px 0;">
+                        <h4>المرفقات المطلوبة</h4>
+                        <div class="form-grid" style="grid-template-columns: 1fr;">
+                            <div class="form-group">
+                                <label for="coverage-app-id-photo">صورة الهوية الوطنية</label>
+                                <input type="file" id="coverage-app-id-photo" accept="image/*">
+                            </div>
+                            <div class="form-group">
+                                <label for="coverage-app-iban-cert">شهادة الآيبان</label>
+                                <input type="file" id="coverage-app-iban-cert" accept="image/*">
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" id="submit-application-btn" class="btn btn-primary">إرسال الطلب</button>
+                    <button type="button" class="btn btn-secondary modal-close-btn">إلغاء</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="job-application-modal" class="modal-overlay hidden">
+        <div class="modal-panel" style="max-width: 700px;">
+            <div class="modal-header"><h4 id="job-application-modal-title">التقديم على وظيفة</h4><button class="modal-close-btn"><i class="ph-bold ph-x"></i></button></div>
+            <form id="job-application-form">
+                <div class="modal-body">
+                    <input type="hidden" id="apply-job-id">
+                    
+                   
+
+                    
+
+                    <div id="external-applicant-fields">
+                        <h4 style="margin-top:20px;">يرجى تعبئة كافة البيانات التالية بدقة</h4>
+                        <div class="form-grid" style="grid-template-columns: 1fr 1fr;">
+                            <div class="form-group"><label for="job-app-full-name">الاسم الكامل</label><input type="text" id="job-app-full-name"></div>
+                            <div class="form-group"><label for="job-app-id-number">رقم الهوية</label><input type="text" id="job-app-id-number"></div>
+                            <div class="form-group"><label for="job-app-phone">رقم الجوال</label><input type="tel" id="job-app-phone"></div>
+                            <div class="form-group"><label for="job-app-bank-name">اسم البنك</label><input type="text" id="job-app-bank-name"></div>
+                            <div class="form-group" style="grid-column: 1 / -1;"><label for="job-app-iban">رقم الآيبان (IBAN)</label><input type="text" id="job-app-iban"></div>
+                        </div>
+                        <hr style="margin: 25px 0;">
+                        <h4>المرفقات المطلوبة</h4>
+                        <div class="form-grid">
+                            <div class="form-group"><label for="job-app-id-photo">صورة الهوية الوطنية</label><input type="file" id="job-app-id-photo" accept="image/*"></div>
+                            <div class="form-group"><label for="job-app-iban-cert">شهادة الآيبان</label><input type="file" id="job-app-iban-cert" accept="image/*"></div>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" id="submit-job-application-btn" class="btn btn-primary">إرسال طلب التوظيف</button>
+                    <button type="button" class="btn btn-secondary modal-close-btn">إلغاء</button>
+                </div>
+            </form>
+        </div>
+    </div>
+    
+    <script src="config.js"></script>
+    <script src="coverage.js"></script>
+</body>
+</html>
