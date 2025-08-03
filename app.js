@@ -6053,44 +6053,36 @@ if (event.target.closest('#check-in-btn')) {
         checkInBtn.innerHTML = '<i class="ph-fill ph-spinner-gap animate-spin"></i> تحديد موقعك...';
         
         navigator.geolocation.getCurrentPosition(async (position) => {
-            const guardCoords = { lat: position.coords.latitude, lng: position.coords.longitude };
-            const distance = calculateDistance(siteCoords, guardCoords);
-            if (distance > radius) {
-                showCustomAlert('خطأ', `أنت خارج نطاق العمل. المسافة الحالية: ${Math.round(distance)} متر.`, 'error');
-                checkInBtn.disabled = false;
-                checkInBtn.innerHTML = 'تسجيل حضور';
-                return;
-            }
-            
-            // --- هنا الجزء الجديد والمهم للتشخيص ---
-            const { data, error: insertError } = await supabaseClient.from('attendance').insert({
-                guard_id: currentUser.id,
-                guard_name: currentUser.name,
-                vacancy_id: currentUser.vacancy_id,
-                contract_id: contractId,
-                checkin_lat: guardCoords.lat,
-                checkin_lon: guardCoords.lng,
-                status: 'حاضر'
-            });
+            try {
+                const guardCoords = { lat: position.coords.latitude, lng: position.coords.longitude };
+                const distance = calculateDistance(siteCoords, guardCoords);
+                if (distance > radius) throw new Error(`أنت خارج نطاق العمل. المسافة الحالية: ${Math.round(distance)} متر.`);
+                
+                // --- هنا التصحيح: تم حذف contract_id من البيانات المرسلة ---
+                const { error: insertError } = await supabaseClient.from('attendance').insert({
+                    guard_id: currentUser.id,
+                    guard_name: currentUser.name,
+                    vacancy_id: currentUser.vacancy_id,
+                    checkin_lat: guardCoords.lat,
+                    checkin_lon: guardCoords.lng,
+                    status: 'حاضر'
+                });
 
-            if (insertError) {
-                // سنقوم بعرض رسالة الخطأ التفصيلية في alert
-                const detailedMessage = `فشل حفظ البيانات في قاعدة البيانات.\n\nالرسالة: ${insertError.message}\n\nالتفاصيل: ${insertError.details}\n\nالكود: ${insertError.code}`;
-                alert(detailedMessage); // هذا السطر سيعرض الخطأ بالتفصيل على الجوال
-
-                // ونعرض رسالة للمستخدم في الواجهة أيضاً
-                showCustomAlert('خطأ في قاعدة البيانات', 'فشلت عملية الحفظ، تم عرض التفاصيل للمشرف.', 'error');
-                checkInBtn.disabled = false;
-                checkInBtn.innerHTML = 'تسجيل حضور';
-            } else {
+                if (insertError) {
+                    console.error('Detailed Supabase Insert Error:', insertError);
+                    throw new Error('حدث خطأ أثناء محاولة تسجيل حضورك في قاعدة البيانات.');
+                }
+                
                 showCustomAlert('نجاح', 'تم تسجيل حضورك بنجاح.', 'success');
                 loadAttendancePage();
+            } catch (innerError) {
+                showCustomAlert('خطأ', innerError.message, 'error');
+                checkInBtn.disabled = false;
+                checkInBtn.innerHTML = 'تسجيل حضور';
             }
-            // --- نهاية جزء التشخيص ---
-
         }, handleLocationError, { 
             enableHighAccuracy: true,
-            timeout: 20000, // زيادة المهلة إلى 20 ثانية
+            timeout: 20000,
             maximumAge: 0
         });
 
