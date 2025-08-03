@@ -3793,7 +3793,7 @@ async function loadEmployeeTabData() {
     if (locationVal) {
         query = query.ilike('location', `%${locationVal}%`);
     }
-    
+
     const { data: employees, error } = await query.order('name', { ascending: true });
 
     if (error) {
@@ -4958,8 +4958,31 @@ if (menuBtn) {
         displayActiveAnnouncements(); // <-- هذا هو السطر الجديد والمهم
 
         // افتح الصفحة الأولى المتاحة (أو الصفحة المحفوظة في الرابط، سنتعامل معها في الخطوة 3)
-        const firstVisibleLink = document.querySelector('.sidebar-nav li[style*="display: block"] a');
-        if(firstVisibleLink) firstVisibleLink.click();
+        const lastPageId = sessionStorage.getItem('lastVisitedPage');
+        let pageToOpenLink = null;
+
+        // تحقق إذا كان هناك صفحة محفوظة
+        if (lastPageId) {
+            // حاول العثور على رابط الصفحة المحفوظة
+            pageToOpenLink = document.querySelector(`.sidebar-nav a[data-page="${lastPageId}"]`);
+            // تأكد من أن الرابط موجود وأن المستخدم يملك صلاحية رؤيته
+            if (pageToOpenLink && pageToOpenLink.parentElement.style.display !== 'none') {
+                // تم العثور على صفحة صالحة، سيتم فتحها
+            } else {
+                // إذا كانت الصفحة المحفوظة غير صالحة (مثلاً تم تغيير صلاحيات المستخدم)، تجاهلها
+                pageToOpenLink = null;
+            }
+        }
+
+        // إذا لم نجد صفحة صالحة محفوظة، نعود للخيار الافتراضي (فتح أول صفحة في القائمة)
+        if (!pageToOpenLink) {
+            pageToOpenLink = document.querySelector('.sidebar-nav li[style*="display: block"] a');
+        }
+
+        // أخيراً، قم بفتح الصفحة التي تم تحديدها
+        if (pageToOpenLink) {
+            pageToOpenLink.click();
+        }
     }
     // --- END: Check for existing session ---
 
@@ -4974,6 +4997,8 @@ navLinks.forEach(link => {
         event.preventDefault();
         const targetPageId = this.dataset.page;
         if (!targetPageId) return;
+
+        sessionStorage.setItem('lastVisitedPage', targetPageId);
 
         // --- إيقاف الاشتراكات القديمة قبل الانتقال لصفحة جديدة ---
         if (mapSubscription) {
