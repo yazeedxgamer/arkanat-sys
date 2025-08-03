@@ -2031,38 +2031,55 @@ async function loadAttendancePage() {
         return;
     }
 
-    const { data: openRecords, error } = await supabaseClient
-        .from('attendance')
-        .select('id, created_at, status') // جلب الحالة مع البيانات
-        .eq('guard_id', currentUser.id)
-        .is('checkout_at', null)
-        .order('created_at', { ascending: false });
+    try {
+        const { data: openRecord, error: attendanceError } = await supabaseClient
+            .from('attendance')
+            .select('id, created_at, status')
+            .eq('guard_id', currentUser.id)
+            .is('checkout_at', null)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
 
-    if (error) {
-        document.getElementById('attendance-status').innerHTML = '<p>حدث خطأ أثناء التحقق.</p>';
-        return console.error("Attendance Check Error:", error);
-    }
-
-    const statusText = document.getElementById('attendance-status');
-    const checkInBtn = document.getElementById('check-in-btn');
-    const checkOutBtn = document.getElementById('check-out-btn');
-
-    if (openRecords && openRecords.length > 0) {
-        const latestRecord = openRecords[0]; 
-        const clockInTime = new Date(latestRecord.created_at).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
-
-        if (latestRecord.status === 'انسحاب') {
-            statusText.innerHTML = `<p style="color: var(--denied-color);">حالتك الحالية: <strong>منسحب</strong>. يرجى التواصل مع مشرفك.</p>`;
-            stopPersistentTracking();
-        } else {
-            statusText.innerHTML = `<p>حالتك الحالية: <strong>مسجل حضور</strong> منذ الساعة ${clockInTime}</p>`;
-            checkOutBtn.classList.remove('hidden');
-            checkOutBtn.dataset.attendanceId = latestRecord.id;
-            startPersistentTracking(currentUser.id);
+        if (attendanceError && attendanceError.code !== 'PGRST116') { // PGRST116 means no rows found, which is not an error here.
+            throw attendanceError;
         }
-    } else {
-        statusText.innerHTML = `<p>حالتك الحالية: <strong>لم تسجل حضور بعد</strong></p>`;
-        checkInBtn.classList.remove('hidden');
+
+        const statusText = document.getElementById('attendance-status');
+        const checkInBtn = document.getElementById('check-in-btn');
+        const checkOutBtn = document.getElementById('check-out-btn');
+
+        if (openRecord) { // إذا كان هناك سجل حضور مفتوح
+            const clockInTime = new Date(openRecord.created_at).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
+
+            if (openRecord.status === 'انسحاب') {
+                statusText.innerHTML = `<p style="color: var(--denied-color);">حالتك الحالية: <strong>منسحب</strong>. يرجى التواصل مع مشرفك.</p>`;
+                stopPersistentTracking();
+            } else {
+                statusText.innerHTML = `<p>حالتك الحالية: <strong>مسجل حضور</strong> منذ الساعة ${clockInTime}</p>`;
+                checkOutBtn.classList.remove('hidden');
+                checkOutBtn.dataset.attendanceId = openRecord.id;
+
+                // --- هنا التعديل: جلب البيانات الكاملة قبل بدء التتبع ---
+                const { data: fullUser, error: userError } = await supabaseClient
+                    .from('users')
+                    .select('*, job_vacancies(*, contracts(*))')
+                    .eq('id', currentUser.id)
+                    .single();
+
+                if (userError || !fullUser || !fullUser.job_vacancies) {
+                    throw new Error('لا يمكن تفعيل التتبع، الموظف غير مرتبط بشاغر.');
+                }
+                startPersistentTracking(fullUser, openRecord.id); // تمرير البيانات الكاملة
+            }
+        } else { // إذا لم يكن هناك سجل حضور مفتوح
+            statusText.innerHTML = `<p>حالتك الحالية: <strong>لم تسجل حضور بعد</strong></p>`;
+            checkInBtn.classList.remove('hidden');
+            stopPersistentTracking();
+        }
+    } catch (error) {
+        document.getElementById('attendance-status').innerHTML = `<p style="color: var(--denied-color);">${error.message}</p>`;
+        console.error("Attendance Page Error:", error);
         stopPersistentTracking();
     }
 }
@@ -2149,7 +2166,7 @@ async function loadMapStatistics() {
 // دالة جديدة لبدء التتبع
 // ==================== بداية الاستبدال ====================
 // دالة لبدء التتبع المستمر (النسخة الجديدة مع إرسال إشعارات الانسحاب)
-async function startPersistentTracking(userId) {
+async function startPersistentTracking(fullUser, attendanceId) {
     if (window.locationWatcherId) {
         navigator.geolocation.clearWatch(window.locationWatcherId);
     }
@@ -2168,18 +2185,7 @@ async function startPersistentTracking(userId) {
     };
 
     try {
-        // --- هنا التعديل: استخدام ربط أكثر مرونة (LEFT JOIN) ---
-        const { data: user, error: e1 } = await supabaseClient
-            .from('users')
-            .select('*, job_vacancies(*, contracts(*))') // <-- هذا السطر هو التعديل
-            .eq('id', userId)
-            .single();
-            
-        if (e1 || !user || !user.job_vacancies) {
-            throw new Error('لا يمكن تفعيل التتبع، الموظف غير مرتبط بشاغر.');
-        }
-
-        const vacancy = user.job_vacancies;
+        const vacancy = fullUser.job_vacancies;
         const contract = vacancy.contracts;
         if (!contract) throw new Error('لا يمكن العثور على بيانات العقد.');
 
@@ -2190,22 +2196,17 @@ async function startPersistentTracking(userId) {
         const radius = locationData.geofence_radius || 200;
         if (!siteCoords) throw new Error('إحداثيات الموقع في العقد غير صالحة.');
 
-        const { data: openRecord, error: e4 } = await supabaseClient.from('attendance').select('id').eq('guard_id', userId).is('checkout_at', null).single();
-        if (e4 || !openRecord) throw new Error('لا يوجد سجل حضور مفتوح لتتبعه.');
-        
-        const attendanceId = openRecord.id;
-
         window.locationWatcherId = navigator.geolocation.watchPosition(
             async (position) => {
                 const { latitude, longitude } = position.coords;
-                supabaseClient.from('guard_locations').upsert({ guard_id: userId, latitude, longitude }, { onConflict: 'guard_id' }).then();
-                supabaseClient.from('guard_location_history').insert({ guard_id: userId, latitude, longitude }).then();
+                supabaseClient.from('guard_locations').upsert({ guard_id: fullUser.id, latitude, longitude }, { onConflict: 'guard_id' }).then();
+                supabaseClient.from('guard_location_history').insert({ guard_id: fullUser.id, latitude, longitude }).then();
 
                 const distance = calculateDistance(siteCoords, { lat: latitude, lng: longitude });
 
                 if (distance > radius) {
                     stopPersistentTracking();
-                    showToast(`تم تسجيل انسحاب للحارس: ${user.name}`, 'error');
+                    showToast(`تم تسجيل انسحاب للحارس: ${fullUser.name}`, 'error');
                     
                     await supabaseClient.from('attendance').update({ status: 'انسحاب', checkout_at: new Date() }).eq('id', attendanceId);
                     
@@ -2216,7 +2217,7 @@ async function startPersistentTracking(userId) {
                         sendNotification(
                             managerIds,
                             'تنبيه: انسحاب حارس',
-                            `الحارس "${user.name}" انسحب من موقعه في مشروع "${vacancy.project}". يرجى المتابعة.`
+                            `الحارس "${fullUser.name}" انسحب من موقعه في مشروع "${vacancy.project}". يرجى المتابعة.`
                         );
                     }
                     loadAttendancePage();
