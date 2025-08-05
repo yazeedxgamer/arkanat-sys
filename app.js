@@ -1,5 +1,60 @@
 
 // ==========================================================
+// ===          بداية الإضافة: دوال تنسيق التاريخ الميلادي          ===
+// ==========================================================
+
+/**
+ * دالة لتنسيق التاريخ فقط بالصيغة الميلادية (DD/MM/YYYY)
+ * @param {string | Date} dateInput - التاريخ المراد تنسيقه
+ * @returns {string} - التاريخ المنسق أو 'غير محدد'
+ */
+function formatGregorianDate(dateInput) {
+    if (!dateInput) return 'غير محدد';
+    try {
+        const date = new Date(dateInput);
+        // التأكد من أن التاريخ صالح قبل المتابعة
+        if (isNaN(date.getTime())) {
+            return 'تاريخ غير صالح';
+        }
+        const day = String(date.getDate()).padStart(2, '0');
+        const month = String(date.getMonth() + 1).padStart(2, '0'); // الشهر يبدأ من 0
+        const year = date.getFullYear();
+        return `${day}/${month}/${year}`;
+    } catch (e) {
+        console.error("Date formatting error:", e);
+        return 'غير محدد';
+    }
+}
+
+/**
+ * دالة لتنسيق التاريخ والوقت بالصيغة الميلادية (DD/MM/YYYY, HH:MM AM/PM)
+ * @param {string | Date} dateInput - التاريخ والوقت المراد تنسيقه
+ * @returns {string} - التاريخ والوقت المنسق أو 'غير محدد'
+ */
+function formatGregorianDateTime(dateInput) {
+    if (!dateInput) return 'غير محدد';
+    try {
+        const date = new Date(dateInput);
+        if (isNaN(date.getTime())) {
+            return 'تاريخ غير صالح';
+        }
+        const formattedDate = formatGregorianDate(date);
+        const formattedTime = date.toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: true
+        });
+        return `${formattedDate} - ${formattedTime}`;
+    } catch (e) {
+        console.error("DateTime formatting error:", e);
+        return 'غير محدد';
+    }
+}
+
+// ==========================================================
+// ===           نهاية الإضافة: دوال تنسيق التاريخ الميلادي           ===
+// ==========================================================
+// ==========================================================
 // ===       دالة تحميل قالب إدخال العقود بالعربي        ===
 // ==========================================================
 async function downloadContractTemplate() {
@@ -1517,7 +1572,7 @@ async function loadAuditLogs(filters = {}) {
                 <tbody>
                     ${data.map(log => `
                         <tr>
-                            <td>${new Date(log.created_at).toLocaleString('ar-SA')}</td>
+                            <td>${formatGregorianDateTime(log.created_at)}</td>
                             <td>${log.user_name || 'نظام'}</td>
                             <td>${log.users?.role || 'غير محدد'}</td>
                             <td><span class="status pending">${log.action_type}</span></td>
@@ -1571,7 +1626,7 @@ async function loadErrorLogs() {
             <tbody>
                 ${data.map(log => `
                     <tr style="color: var(--denied-color);">
-                        <td>${new Date(log.created_at).toLocaleString('ar-SA')}</td>
+                        <td>${formatGregorianDateTime(log.created_at)}</td>
                         <td>${log.user_name || 'غير معروف'}</td>
                         <td>${log.error_message}</td>
                     </tr>
@@ -1811,12 +1866,31 @@ function updateUIVisibility(role) {
 
     allMenuItems.forEach(item => {
         const allowedRoles = item.dataset.role ? item.dataset.role.split(',') : [];
+        const page = item.querySelector('a')?.dataset.page;
 
-        // التعديل هنا: تحقق إذا كانت القائمة تحتوي على الدور الحالي أو تحتوي على 'all'
-        if (allowedRoles.includes(role) || allowedRoles.includes('all')) {
-            item.style.display = 'block';
+        // ================================================================
+        // ===      بداية الإضافة: شرط خاص لصفحة إدارة الحضور        ===
+        // ================================================================
+        // هذا الشرط يتحقق من الصفحة الجديدة بشكل خاص
+        if (page === 'page-attendance-management') {
+            // تحقق إذا كان المستخدم مدير نظام، أو موارد بشرية ولديه الصلاحية
+            const canView = (
+                currentUser.role === 'مدير النظام' || 
+                (currentUser.role === 'ادارة الموارد البشرية' && currentUser.can_edit_attendance)
+            );
+
+            item.style.display = canView ? 'block' : 'none';
+
+        // ================================================================
+        // ===    نهاية الإضافة / الكود الأصلي لباقي الصفحات         ===
+        // ================================================================
         } else {
-            item.style.display = 'none';
+            // الكود الأصلي لباقي الصفحات لم يتغير
+            if (allowedRoles.includes(role) || allowedRoles.includes('all')) {
+                item.style.display = 'block';
+            } else {
+                item.style.display = 'none';
+            }
         }
     });
 }
@@ -2050,7 +2124,7 @@ async function loadAttendancePage() {
         const checkOutBtn = document.getElementById('check-out-btn');
 
         if (openRecord) {
-            const clockInTime = new Date(openRecord.created_at).toLocaleTimeString('ar-SA', { hour: '2-digit', minute: '2-digit' });
+            const clockInTime = new Date(openRecord.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
 
             if (openRecord.status === 'انسحاب') {
                 statusText.innerHTML = `<p style="color: var(--denied-color);">حالتك الحالية: <strong>منسحب</strong>. يرجى التواصل مع مشرفك.</p>`;
@@ -2167,12 +2241,10 @@ async function loadMapStatistics() {
 // ==================== بداية الاستبدال ====================
 // دالة لبدء التتبع المستمر (النسخة الجديدة مع إرسال إشعارات الانسحاب)
 async function startPersistentTracking(fullUser, attendanceId) {
-    stopPersistentTracking(); // إيقاف أي مؤقت قديم أولاً
-
+    stopPersistentTracking(); 
     const locationStatus = document.getElementById('location-status');
     if (locationStatus) locationStatus.innerHTML = `<p style="color: #22c55e;">التتبع المباشر فعال.</p>`;
 
-    // يمكنك تغيير هذا الرقم. 30000 تعني 30 ثانية.
     const UPDATE_INTERVAL_MS = 15000;
 
     const handleTrackingError = (geoError) => {
@@ -2194,32 +2266,38 @@ async function startPersistentTracking(fullUser, attendanceId) {
         const radius = locationData.geofence_radius || 200;
         if (!siteCoords) throw new Error('إحداثيات الموقع في العقد غير صالحة.');
 
-        // دالة ليتم استدعاؤها بشكل دوري
         const updateLocation = () => {
             navigator.geolocation.getCurrentPosition(
                 async (position) => {
-                    const { latitude, longitude } = position.coords;
-                    // تحديث الموقع الحالي في جدول المواقع المباشرة
+                    const { latitude, longitude, accuracy } = position.coords;
                     supabaseClient.from('guard_locations').upsert({ guard_id: fullUser.id, latitude, longitude }, { onConflict: 'guard_id' }).then();
-                    
+
                     const distance = calculateDistance(siteCoords, { lat: latitude, lng: longitude });
 
-                    if (distance > radius) {
+                    // ==========================================================
+                    // ===         بداية الإضافة: قاعدة الانسحاب الذكية          ===
+                    // ==========================================================
+                    // القاعدة الجديدة: لن يتم تسجيل الانسحاب إلا إذا كان أقرب موقع محتمل للحارس
+                    // (مع أخذ هامش الخطأ في الاعتبار) لا يزال خارج النطاق المحدد.
+                    const effectiveDistance = distance - accuracy;
+
+                    if (effectiveDistance > radius) {
+                        console.log(`انسحاب مؤكد: المسافة ${distance.toFixed(0)}م, الدقة ${accuracy.toFixed(0)}م, النطاق ${radius}م`);
                         stopPersistentTracking();
                         showToast(`تم تسجيل انسحاب للحارس: ${fullUser.name}`, 'error');
                         await supabaseClient.from('attendance').update({ status: 'انسحاب', checkout_at: new Date() }).eq('id', attendanceId);
                         loadAttendancePage();
                     }
+                    // ==========================================================
+                    // ===                    نهاية الإضافة                     ===
+                    // ==========================================================
                 },
                 handleTrackingError,
                 { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
             );
         };
 
-        // قم بتشغيل الدالة مرة واحدة فوراً
         updateLocation();
-
-        // ثم قم بتعيينها لتعمل كل فترة زمنية محددة
         locationUpdateInterval = setInterval(updateLocation, UPDATE_INTERVAL_MS);
 
     } catch(err) {
@@ -2298,29 +2376,43 @@ async function loadUserManagementPage() {
     const container = document.getElementById('user-management-table-container');
     container.innerHTML = '<p style="text-align: center;">جاري تحميل قائمة المستخدمين...</p>';
 
-    const { data: users, error } = await supabaseClient.from('users').select('*').order('name', { ascending: true });
+    // جلب العمود الجديد 'can_edit_attendance' مع باقي البيانات
+    const { data: users, error } = await supabaseClient.from('users').select('*, can_edit_attendance').order('name', { ascending: true });
     if (error) { container.innerHTML = '<p style="color:red;">حدث خطأ في جلب المستخدمين.</p>'; return; }
 
     container.innerHTML = `
         <table>
             <thead>
-                <tr><th>الاسم</th><th>الدور</th><th>المشروع</th><th>الحالة</th><th>إجراءات</th></tr>
+                <tr>
+                    <th>الاسم</th>
+                    <th>الدور</th>
+                    <th>المشروع</th>
+                    <th>الحالة</th>
+                    <th>تعديل الحضور</th> <th>إجراءات</th>
+                </tr>
             </thead>
             <tbody>
-                ${users.map(user => `
-                    <tr>
-                        <td>${user.name}</td>
-                        <td>${user.role}</td>
-                        <td>${user.project || '-'}</td>
-                        <td><span class="status ${user.status === 'active' ? 'active' : 'inactive'}">${user.status === 'active' ? 'نشط' : 'غير نشط'}</span></td>
-                        <td>
-                            <button class="btn btn-secondary btn-sm admin-edit-user-btn" data-id="${user.id}" title="تعديل"><i class="ph-bold ph-pencil-simple"></i></button>
-                            <button class="btn btn-danger btn-sm admin-delete-user-btn" data-id="${user.id}" data-auth-id="${user.auth_user_id}" title="حذف"><i class="ph-bold ph-trash"></i></button>
-                            <button class="btn btn-secondary btn-sm admin-reset-password-btn" data-auth-id="${user.auth_user_id}" title="إعادة تعيين كلمة المرور"><i class="ph-bold ph-key"></i></button>
-                            <button class="btn btn-secondary btn-sm admin-login-as-btn" data-user-id="${user.auth_user_id}" data-user-name="${user.name}" title="تسجيل الدخول كـ ${user.name}"><i class="ph-bold ph-sign-in"></i></button>
+                ${users.map(user => {
+                    // التحقق إذا كان الموظف من الموارد البشرية لعرض مربع الاختيار
+                    const permissionCheckbox = user.role === 'ادارة الموارد البشرية'
+                        ? `<input type="checkbox" class="attendance-permission-checkbox" data-user-id="${user.id}" ${user.can_edit_attendance ? 'checked' : ''}>`
+                        : '-';
+
+                    return `
+                        <tr>
+                            <td>${user.name}</td>
+                            <td>${user.role}</td>
+                            <td>${user.project || '-'}</td>
+                            <td><span class="status ${user.status === 'active' ? 'active' : 'inactive'}">${user.status === 'active' ? 'نشط' : 'غير نشط'}</span></td>
+                            <td style="text-align: center;">${permissionCheckbox}</td> <td>
+                                <button class="btn btn-secondary btn-sm admin-edit-user-btn" data-id="${user.id}" title="تعديل"><i class="ph-bold ph-pencil-simple"></i></button>
+                                <button class="btn btn-danger btn-sm admin-delete-user-btn" data-id="${user.id}" data-auth-id="${user.auth_user_id}" title="حذف"><i class="ph-bold ph-trash"></i></button>
+                                <button class="btn btn-secondary btn-sm admin-reset-password-btn" data-auth-id="${user.auth_user_id}" title="إعادة تعيين كلمة المرور"><i class="ph-bold ph-key"></i></button>
+                                <button class="btn btn-secondary btn-sm admin-login-as-btn" data-user-id="${user.auth_user_id}" data-user-name="${user.name}" title="تسجيل الدخول كـ ${user.name}"><i class="ph-bold ph-sign-in"></i></button>
                             </td>
-                    </tr>
-                `).join('')}
+                        </tr>
+                    `;
+                }).join('')}
             </tbody>
         </table>`;
 }
@@ -2527,14 +2619,36 @@ async function fetchSchedules() {
 // ------------------------------------
 
 
-async function loadPenaltiesPage(searchTerm = '') {
+async function loadPenaltiesPage() {
     const container = document.getElementById('penalties-employee-list');
     container.innerHTML = '<p style="text-align: center;">جاري تحميل الموظفين...</p>';
 
+    // --- قراءة قيم الفلاتر الجديدة من الواجهة ---
+    const searchVal = document.getElementById('hr-filter-search-penalties').value;
+    const regionVal = document.getElementById('hr-filter-region-penalties').value;
+    const cityVal = document.getElementById('hr-filter-city-penalties').value;
+    const projectVal = document.getElementById('hr-filter-project-penalties').value;
+    const locationVal = document.getElementById('hr-filter-location-penalties').value;
+
     let query = supabaseClient.from('users').select('id, name, role, project');
-    if (searchTerm) {
-        query = query.ilike('name', `%${searchTerm}%`);
+
+    // --- تطبيق الفلاتر على استعلام قاعدة البيانات ---
+    if (searchVal) {
+        query = query.or(`name.ilike.%${searchVal}%,id_number.ilike.%${searchVal}%`);
     }
+    if (regionVal) {
+        query = query.eq('region', regionVal);
+    }
+    if (cityVal) {
+        query = query.eq('city', cityVal);
+    }
+    if (projectVal) {
+        query = query.filter('project', 'cs', `{${projectVal}}`);
+    }
+    if (locationVal) {
+        query = query.eq('location', locationVal);
+    }
+
     const { data: employees, error } = await query.order('name');
 
     if (error) {
@@ -2542,7 +2656,7 @@ async function loadPenaltiesPage(searchTerm = '') {
         return;
     }
     if (employees.length === 0) {
-        container.innerHTML = '<p style="text-align: center;">لم يتم العثور على موظفين.</p>';
+        container.innerHTML = '<p style="text-align: center;">لم يتم العثور على موظفين يطابقون شروط الفلترة.</p>';
         return;
     }
 
@@ -2589,7 +2703,7 @@ async function loadOpsDirectivesHistory() {
             case 'rejected': statusClass = 'inactive'; statusText = 'تم الرفض'; break;
             default: statusClass = 'pending'; statusText = 'مرسل';
         }
-        const date = new Date(d.created_at).toLocaleString('ar-SA');
+        const date = formatGregorianDateTime(d.created_at);
         
         // --- هنا الجزء الجديد لعرض الملاحظات ---
         let notesFooter = '';
@@ -2641,9 +2755,7 @@ async function loadMyVisitsPage() {
     }
 
     container.innerHTML = visits.map(visit => {
-        const visitTimestamp = new Date(visit.visit_time);
-        const visitDate = visitTimestamp.toLocaleDateString('ar-SA', { day: 'numeric', month: 'long' });
-        const visitTime = visitTimestamp.toLocaleTimeString('ar-SA', { hour: 'numeric', minute: '2-digit' });
+        const formattedDateTime = formatGregorianDateTime(visit.visit_time);
 
         // تصحيح: عرض اسم الموقع من الزيارة مباشرة
         const locationDisplay = visit.location_name || 'موقع غير محدد';
@@ -2654,7 +2766,7 @@ async function loadMyVisitsPage() {
                 <div class="visit-details">
                     <h4>زيارة إلى: ${locationDisplay}</h4>
                     <p class="visit-meta">
-                        <span><i class="ph-bold ph-calendar"></i> ${visitDate} - ${visitTime}</span>
+                        <span><i class="ph-bold ph-calendar"></i> ${formattedDateTime}</span>
                     </p>
                     <p class="visit-notes">${visit.notes || 'لا توجد ملاحظات.'}</p>
                 </div>
@@ -3115,7 +3227,7 @@ async function loadMyDirectivesPage() {
         incomingContainer.innerHTML = '<p style="text-align: center;">لا توجد لديك توجيهات واردة حالياً.</p>';
     } else {
         incomingContainer.innerHTML = directives.map(d => {
-            const date = new Date(d.created_at).toLocaleString('ar-SA');
+            const date = formatGregorianDateTime(d.created_at);
             let footer = (d.status === 'pending') ? `<div class="review-request-footer"><button class="btn btn-success directive-action-btn" data-action="accepted" data-directive-id="${d.id}"><i class="ph-bold ph-check"></i> قبول</button><button class="btn btn-danger directive-action-btn" data-action="rejected" data-directive-id="${d.id}"><i class="ph-bold ph-x"></i> رفض</button></div>` : '';
             return `<div class="visit-card" style="margin-bottom:15px; border-right-color: var(--accent-color);"><div class="visit-details" style="width: 100%;"><div style="display: flex; justify-content: space-between; align-items: start;"><h4>توجيه من: ${d.sender ? d.sender.name : 'غير معروف'} (${d.sender ? d.sender.role : ''})</h4><span class="visit-meta" style="padding:0; border:0;">${date}</span></div><p class="visit-notes" style="margin-top: 15px;">${d.content}</p></div></div>${footer}`;
         }).join('');
@@ -3434,9 +3546,7 @@ async function fetchVisits() {
     listContainer.innerHTML = '';
     visits.forEach(visit => {
         if (!visit.users) return;
-        const visitTimestamp = new Date(visit.visit_time);
-        const visitDate = visitTimestamp.toLocaleDateString('ar-SA', { day: 'numeric', month: 'long'});
-        const visitTime = visitTimestamp.toLocaleTimeString('ar-SA', { hour: 'numeric', minute: '2-digit'});
+        const formattedDateTime = formatGregorianDateTime(visit.visit_time);
         const locationDisplay = `${visit.users.project} - ${visit.location_name}`;
         const card = `
             <div class="visit-card">
@@ -3445,7 +3555,7 @@ async function fetchVisits() {
                     <h4>زيارة إلى: ${locationDisplay}</h4>
                     <p class="visit-meta">
                         <span><i class="ph-bold ph-user-circle"></i> المشرف: ${visit.users.name}</span>
-                        <span><i class="ph-bold ph-calendar"></i> ${visitDate} - ${visitTime}</span>
+                        <span><i class="ph-bold ph-calendar"></i> ${formattedDateTime}</span>
                     </p>
                     <p class="visit-notes">${visit.notes || 'لا توجد ملاحظات.'}</p>
                 </div>
@@ -3565,8 +3675,8 @@ async function loadPatrolsHistory() {
                 <div class="visit-details">
                     <h4>جولة للمشرف: ${patrol.supervisor ? patrol.supervisor.name : 'غير معروف'}</h4>
                     <p class="visit-meta">
-                        <span><i class="ph-bold ph-calendar-check"></i> ${startTime.toLocaleDateString('ar-SA')}</span>
-                        <span><i class="ph-bold ph-clock"></i> من ${startTime.toLocaleTimeString('ar-SA', {timeStyle: 'short'})} إلى ${endTime.toLocaleTimeString('ar-SA', {timeStyle: 'short'})}</span>
+                        <span><i class="ph-bold ph-calendar-check"></i> ${formatGregorianDate(startTime)}</span>
+                        <span><i class="ph-bold ph-clock"></i> من ${startTime.toLocaleTimeString('en-US', {timeStyle: 'short'})} إلى ${endTime.toLocaleTimeString('en-US', {timeStyle: 'short'})}</span>
                         <span><i class="ph-bold ph-timer"></i> المدة: ${durationMinutes} دقيقة</span>
                     </p>
                     <p class="visit-notes">${patrol.notes || 'لا توجد ملاحظات.'}</p>
@@ -3692,20 +3802,251 @@ async function loadVacancyTabData() {
         listContainer.innerHTML = `<p style="color:red;">حدث خطأ في تحميل بيانات الشواغر: ${error.message}</p>`;
     }
 }
+// ==========================================================
+// ===   بداية الإضافة: العقل المدبر لنظام الفلاتر للموارد البشرية   ===
+// ==========================================================
+let hrFilterData = null; // متغير لتخزين بيانات الفلاتر (مناطق، مدن..) لتجنب إعادة تحميلها
+
+// دالة لجلب وتنظيم بيانات الفلاتر من العقود
+async function getHrFilterData() {
+    if (hrFilterData) return hrFilterData; // إذا كانت البيانات موجودة، لا تقم بالجلب مرة أخرى
+
+    const { data: contracts, error } = await supabaseClient.from('contracts').select('region, city, company_name, contract_locations');
+    if (error) {
+        console.error("Error fetching filter data:", error);
+        return {};
+    }
+
+    const structuredData = {};
+    contracts.forEach(contract => {
+        const region = contract.region;
+        const cities = contract.city || [];
+        const project = contract.company_name;
+
+        if (!region || cities.length === 0) return;
+
+        if (!structuredData[region]) structuredData[region] = {};
+
+        cities.forEach(city => {
+            if (!structuredData[region][city]) structuredData[region][city] = {};
+            if (!structuredData[region][city][project]) structuredData[region][city][project] = new Set();
+
+            (contract.contract_locations || []).forEach(loc => {
+                if (loc.city === city) {
+                    structuredData[region][city][project].add(loc.name);
+                }
+            });
+        });
+    });
+
+    // تحويل Sets إلى Arrays
+    for (const region in structuredData) {
+        for (const city in structuredData[region]) {
+            for (const project in structuredData[region][city]) {
+                structuredData[region][city][project] = Array.from(structuredData[region][city][project]);
+            }
+        }
+    }
+
+    hrFilterData = structuredData;
+    return hrFilterData;
+}
+
+// دالة لملء القوائم المنسدلة بالبيانات
+async function initializeHrFilters(pagePrefix) {
+    const data = await getHrFilterData();
+    const regionSelect = document.getElementById(`hr-filter-region-${pagePrefix}`);
+    if (!regionSelect) return;
+
+    // تعبئة قائمة المناطق
+    const regions = Object.keys(data).sort();
+    regionSelect.innerHTML = '<option value="">كل المناطق</option>';
+    regions.forEach(region => {
+        regionSelect.innerHTML += `<option value="${region}">${region}</option>`;
+    });
+}
+
+// دالة لتحديد أي صفحة يجب إعادة تحميلها بناءً على الفلتر
+function triggerHrDataLoad(pagePrefix) {
+    if (pagePrefix === 'employees') {
+        loadEmployeeTabData();
+    } else if (pagePrefix === 'attlog') {
+        loadHrAttendanceLogPage();
+    } else if (pagePrefix === 'penalties') {
+        loadPenaltiesPage();
+    } else if (pagePrefix === 'attmgmt') {
+        loadAttendanceManagementPage(); // <-- الإضافة الجديدة
+    }
+    // يمكن إضافة الصفحات الأخرى هنا مستقبلاً
+    // تم حذف حالة مسير الرواتب من هنا عمداً لمنع التوليد التلقائي
+}
+
+
+
+// منطق تشغيل الفلاتر المترابطة (Cascading)
+document.addEventListener('change', async function(event) {
+    const target = event.target;
+    if (!target.classList.contains('cascading-filter')) return;
+
+    const pagePrefix = target.id.split('-').pop();
+    const nextSelectId = target.dataset.target;
+    const nextSelect = document.getElementById(nextSelectId);
+
+    // إعادة تعيين كل القوائم التالية
+    let current = nextSelect;
+    while(current) {
+        current.disabled = true;
+        current.innerHTML = `<option value="">الكل</option>`;
+        const nextTargetId = current.dataset.target;
+        current = nextTargetId ? document.getElementById(nextTargetId) : null;
+    }
+
+    const data = await getHrFilterData();
+    const regionVal = document.getElementById(`hr-filter-region-${pagePrefix}`).value;
+    const cityVal = document.getElementById(`hr-filter-city-${pagePrefix}`).value;
+    const projectVal = document.getElementById(`hr-filter-project-${pagePrefix}`).value;
+
+    let options = [];
+    if (nextSelectId.includes('city')) { // إذا كنا نملأ قائمة المدن
+        if (regionVal && data[regionVal]) options = Object.keys(data[regionVal]).sort();
+    } else if (nextSelectId.includes('project')) { // إذا كنا نملأ قائمة المشاريع
+        if (regionVal && cityVal && data[regionVal][cityVal]) options = Object.keys(data[regionVal][cityVal]).sort();
+    } else if (nextSelectId.includes('location')) { // إذا كنا نملأ قائمة المواقع
+        if (regionVal && cityVal && projectVal && data[regionVal][cityVal][projectVal]) options = data[regionVal][cityVal][projectVal].sort();
+    }
+
+    if (options.length > 0) {
+        nextSelect.disabled = false;
+        options.forEach(opt => nextSelect.innerHTML += `<option value="${opt}">${opt}</option>`);
+    }
+
+    // إعادة تحميل بيانات الجدول بعد أي تغيير
+    triggerHrDataLoad(pagePrefix);
+});
+
+// منطق لإعادة تحميل البيانات عند البحث أو تغيير الدور
+// منطق لإعادة تحميل البيانات عند تغيير أي فلتر غير مترابط
+document.addEventListener('input', function(event) {
+    const target = event.target;
+    if (target.id === 'employee-search-input' || target.id === 'employee-role-filter') {
+        triggerHrDataLoad('employees');
+    } else if (target.id === 'hr-filter-search-penalties') {
+        triggerHrDataLoad('penalties');
+    } else if (target.id === 'hr-filter-search-attmgmt') {
+        triggerHrDataLoad('attmgmt'); // <-- الإضافة الجديدة
+    }
+});
+
+// إضافة مستمع لـ change الخاص بالفلاتر غير المترابطة (مثل التاريخ والحالة)
+document.addEventListener('change', function(event) {
+    const target = event.target;
+    if (target.classList.contains('hr-filter-control-attlog') && !target.classList.contains('cascading-filter')) {
+        triggerHrDataLoad('attlog');
+    } else if (target.classList.contains('hr-filter-control-attmgmt') && !target.classList.contains('cascading-filter')) {
+        triggerHrDataLoad('attmgmt'); // <-- الإضافة الجديدة
+    }
+});
+
+// ==========================================================
+// ===                   نهاية الإضافة                    ===
+// ==========================================================
+// ==========================================================
+// ===       بداية الإضافة: منطق الفلاتر المترابطة        ===
+// ==========================================================
+
+/**
+ * دالة مساعدة لتعبئة قائمة منسدلة بالخيارات
+ */
+function populateDropdown(selectElement, options, placeholder) {
+    let optionsHtml = `<option value="">${placeholder}</option>`;
+    options.forEach(opt => {
+        optionsHtml += `<option value="${opt}">${opt}</option>`;
+    });
+    selectElement.innerHTML = optionsHtml;
+    selectElement.disabled = false;
+}
+
+/**
+ * دالة مساعدة لإعادة تعيين القوائم المنسدلة
+ */
+function resetDropdowns(elements, startIndex, placeholders) {
+    for (let i = startIndex; i < elements.length; i++) {
+        elements[i].innerHTML = `<option value="">${placeholders[i]}</option>`;
+        elements[i].disabled = true;
+    }
+}
+
+// معالج حدث شامل لمراقبة أي تغيير في فلاتر الموارد البشرية
+document.body.addEventListener('change', async function(event) {
+    if (event.target.classList.contains('cascading-filter')) {
+        const pagePrefix = event.target.id.split('-').pop();
+        const regionSelect = document.getElementById(`hr-filter-region-${pagePrefix}`);
+        const citySelect = document.getElementById(`hr-filter-city-${pagePrefix}`);
+        const projectSelect = document.getElementById(`hr-filter-project-${pagePrefix}`);
+        const locationSelect = document.getElementById(`hr-filter-location-${pagePrefix}`);
+
+        const allDropdowns = [regionSelect, citySelect, projectSelect, locationSelect];
+        const placeholders = ['الكل', 'اختر مدينة أولاً', 'اختر مشروعاً أولاً', 'اختر موقعاً أولاً'];
+
+        const sourceId = event.target.id;
+        const selectedValue = event.target.value;
+
+        if (sourceId === regionSelect.id) {
+            resetDropdowns(allDropdowns, 1, placeholders);
+            if (selectedValue && hrFilterData[selectedValue]) {
+                const cities = Object.keys(hrFilterData[selectedValue]);
+                populateDropdown(citySelect, cities, 'كل المدن');
+            }
+        } else if (sourceId === citySelect.id) {
+            resetDropdowns(allDropdowns, 2, placeholders);
+            if (selectedValue && hrFilterData[regionSelect.value]?.[selectedValue]) {
+                const projects = Object.keys(hrFilterData[regionSelect.value][selectedValue]);
+                populateDropdown(projectSelect, projects, 'كل المشاريع');
+            }
+        } else if (sourceId === projectSelect.id) {
+            resetDropdowns(allDropdowns, 3, placeholders);
+            if (selectedValue && hrFilterData[regionSelect.value]?.[citySelect.value]?.[selectedValue]) {
+                const locations = hrFilterData[regionSelect.value][citySelect.value][selectedValue];
+                populateDropdown(locationSelect, locations, 'كل المواقع');
+            }
+        }
+    }
+
+    // إعادة تحميل البيانات عند تغيير أي فلتر
+    if (event.target.classList.contains('hr-filter-control')) {
+        if (document.querySelector('#page-employees:not(.hidden)')) {
+            loadEmployeeTabData();
+        }
+        // يمكن إضافة الصفحات الأخرى هنا مستقبلاً
+    }
+});
+
+// إعادة تحميل البيانات عند الكتابة في صندوق البحث
+document.body.addEventListener('keyup', function(event) {
+    if (event.target.id === 'employee-search-input') {
+        loadEmployeeTabData();
+    }
+});
+
+// ==========================================================
+// ===                   نهاية الإضافة                    ===
+// ==========================================================
 // دالة تحميل تبويب الموظفين
 async function loadEmployeeTabData() {
     const container = document.getElementById('employees-list-container');
     container.innerHTML = '<p style="text-align: center;">جاري تحميل الموظفين...</p>';
-// -- بداية الإضافة: قراءة قيم جميع الفلاتر --
+
+    // --- قراءة قيم جميع الفلاتر من الواجهة الجديدة ---
     const searchVal = document.getElementById('employee-search-input').value;
     const roleVal = document.getElementById('employee-role-filter').value;
-    const regionVal = document.getElementById('employee-region-filter').value;
-    const projectVal = document.getElementById('employee-project-filter').value;
-    const locationVal = document.getElementById('employee-location-filter').value;
-    // -- نهاية الإضافة --
+    const regionVal = document.getElementById('hr-filter-region-employees').value;
+    const cityVal = document.getElementById('hr-filter-city-employees').value;
+    const projectVal = document.getElementById('hr-filter-project-employees').value;
+    const locationVal = document.getElementById('hr-filter-location-employees').value;
 
-    let query = supabaseClient.from('users').select(`id, name, role, project, phone, employment_status, auth_user_id`);
+    let query = supabaseClient.from('users').select(`id, name, role, project, city, region, location, phone, employment_status, auth_user_id`);
 
+    // --- تطبيق الفلاتر على استعلام قاعدة البيانات ---
     if (searchVal) {
         query = query.or(`name.ilike.%${searchVal}%,id_number.ilike.%${searchVal}%`);
     }
@@ -3715,11 +4056,15 @@ async function loadEmployeeTabData() {
     if (regionVal) {
         query = query.eq('region', regionVal);
     }
+    if (cityVal) {
+        query = query.eq('city', cityVal);
+    }
     if (projectVal) {
+        // .filter مع 'cs' تستخدم للبحث داخل حقل من نوع مصفوفة (array)
         query = query.filter('project', 'cs', `{${projectVal}}`);
     }
     if (locationVal) {
-        query = query.ilike('location', `%${locationVal}%`);
+        query = query.eq('location', locationVal);
     }
 
     const { data: employees, error } = await query.order('name', { ascending: true });
@@ -3733,6 +4078,7 @@ async function loadEmployeeTabData() {
         return;
     }
 
+    // --- باقي الدالة (لإنشاء الجدول) يبقى كما هو ---
     container.innerHTML = `<table><thead><tr>
         <th>الاسم</th>
         <th>الدور</th>
@@ -3741,7 +4087,7 @@ async function loadEmployeeTabData() {
         <th>الحالة الوظيفية</th>
         <th>إجراءات</th>
     </tr></thead><tbody id="employees-table-body"></tbody></table>`;
-    
+
     const tableBody = document.getElementById('employees-table-body');
     employees.forEach(emp => {
         let statusText = emp.employment_status || 'غير محدد';
@@ -3761,14 +4107,12 @@ async function loadEmployeeTabData() {
             projectDisplay = emp.project;
         }
 
-        // --- بداية الإضافة: منطق تعطيل الأزرار ---
         let isDisabled = false;
         let disabledTitle = '';
         if (currentUser.role === 'ادارة الموارد البشرية' && emp.role === 'مدير النظام') {
             isDisabled = true;
             disabledTitle = 'لا يمكن التعديل على مدير النظام';
         }
-        // --- نهاية الإضافة ---
 
         tableBody.insertAdjacentHTML('beforeend', `
             <tr>
@@ -3937,31 +4281,53 @@ async function loadLoanRequests() {
 
 // بداية الاستبدال
 // ========= بداية الاستبدال الكامل للدالة =========
-async function loadHrAttendanceLogPage(filters = {}) {
+// ========= بداية الاستبدال الكامل للدالة (مع الفلاتر الذكية) =========
+async function loadHrAttendanceLogPage() {
     const container = document.getElementById('hr-attendance-accordion-container');
     container.innerHTML = '<p style="text-align: center;">جاري تحميل السجلات...</p>';
 
     try {
-        let query = supabaseClient.from('attendance').select(`*, users ( name, region, project, location )`).order('created_at', { ascending: false });
+        // --- قراءة قيم الفلاتر الجديدة من الواجهة ---
+        const dateFrom = document.getElementById('att-log-date-from').value;
+        const dateTo = document.getElementById('att-log-date-to').value;
+        const status = document.getElementById('att-log-status').value;
+        const region = document.getElementById('hr-filter-region-attlog').value;
+        const city = document.getElementById('hr-filter-city-attlog').value;
+        const project = document.getElementById('hr-filter-project-attlog').value;
+        const location = document.getElementById('hr-filter-location-attlog').value;
 
-        if (filters.status) query = query.eq('status', filters.status);
-        if (filters.dateFrom) query = query.gte('created_at', filters.dateFrom);
-        if (filters.dateTo) query = query.lte('created_at', filters.dateTo);
-        if (filters.project) query = query.ilike('users.project', `%${filters.project}%`);
-        if (filters.location) query = query.ilike('users.location', `%${filters.location}%`);
+        // --- بناء الاستعلام الأساسي ---
+        let query = supabaseClient
+            .from('attendance')
+            .select(`*, users!inner(name, region, project, location, city)`) // !inner لضمان جلب السجلات التي لها موظف مرتبط فقط
+            .order('created_at', { ascending: false });
+
+        // --- تطبيق الفلاتر على الاستعلام ---
+        if (status) query = query.eq('status', status);
+        if (dateFrom) query = query.gte('created_at', dateFrom);
+        if (dateTo) {
+            let toDate = new Date(dateTo);
+            toDate.setHours(23, 59, 59, 999);
+            query = query.lte('created_at', toDate.toISOString());
+        }
+        if (region) query = query.eq('users.region', region);
+        if (city) query = query.eq('users.city', city);
+        if (project) query = query.filter('users.project', 'cs', `{${project}}`);
+        if (location) query = query.eq('users.location', location);
 
         const { data, error } = await query;
         if (error) throw error;
+
         if (data.length === 0) {
             container.innerHTML = '<p style="text-align: center;">لا توجد سجلات تطابق البحث.</p>';
             return;
         }
 
         const isAdmin = currentUser.role === 'مدير النظام';
-        
+
         const groupedData = data.reduce((acc, record) => {
             if (!record.users) return acc;
-            const key = `${record.users.region || 'غير محدد'} > ${record.users.project || 'غير محدد'} > ${record.users.location || 'غير محدد'}`;
+            const key = `${record.users.region || 'غير محدد'} > ${(Array.isArray(record.users.project) ? record.users.project.join(', ') : record.users.project) || 'غير محدد'} > ${record.users.location || 'غير محدد'}`;
             if (!acc[key]) acc[key] = [];
             acc[key].push(record);
             return acc;
@@ -3978,8 +4344,8 @@ async function loadHrAttendanceLogPage(filters = {}) {
                 ${records.map(r => `
                     <tr>
                         <td>${r.users.name}</td>
-                        <td>${r.created_at ? new Date(r.created_at).toLocaleString('ar-SA') : '-'}</td>
-                        <td>${r.checkout_at ? new Date(r.checkout_at).toLocaleString('ar-SA') : '-'}</td>
+                        <td>${r.created_at ? formatGregorianDateTime(r.created_at) : '-'}</td>
+                        <td>${r.checkout_at ? formatGregorianDateTime(r.checkout_at) : '-'}</td>
                         <td><span class="status ${r.status === 'حاضر' ? 'active' : 'inactive'}">${r.status}</span></td>
                         ${isAdmin ? `<td><button class="btn btn-secondary btn-sm admin-edit-attendance-btn" data-id="${r.id}" data-name="${r.users.name}"><i class="ph-bold ph-pencil-simple"></i></button></td>` : ''}
                     </tr>
@@ -4000,19 +4366,22 @@ async function loadHrAttendanceLogPage(filters = {}) {
 // ========= نهاية الاستبدال الكامل للدالة =========
 
 // ========= بداية الاستبدال الكامل لدالة generatePayroll (مع خصم التأخير واستثناء الموظفين) =========
+// ========= بداية الاستبدال الكامل لدالة generatePayroll (مع الفلاتر الذكية) =========
 async function generatePayroll() {
     const resultsContainer = document.getElementById('payroll-results-container');
     const startDateString = document.getElementById('payroll-start-date').value;
     const endDateString = document.getElementById('payroll-end-date').value;
-    
-    // --- بداية الإضافة: هنا تم إضافة الأسطر الثلاثة الناقصة ---
-    const regionVal = document.getElementById('payroll-region-filter').value;
-    const projectVal = document.getElementById('payroll-project').value;
-    const locationVal = document.getElementById('payroll-location').value;
-    // --- نهاية الإضافة ---
 
-    if (!startDateString || !endDateString) return alert('الرجاء تحديد تاريخ البداية والنهاية.');
-    
+    // --- قراءة قيم الفلاتر الجديدة ---
+    const regionVal = document.getElementById('hr-filter-region-payroll').value;
+    const cityVal = document.getElementById('hr-filter-city-payroll').value;
+    const projectVal = document.getElementById('hr-filter-project-payroll').value;
+    const locationVal = document.getElementById('hr-filter-location-payroll').value;
+
+    if (!startDateString || !endDateString) {
+        return alert('الرجاء تحديد تاريخ البداية والنهاية.');
+    }
+
     resultsContainer.innerHTML = '<p style="text-align: center;">جاري جلب البيانات وحساب الرواتب...</p>';
     payrollExportData = [];
 
@@ -4021,25 +4390,26 @@ async function generatePayroll() {
         const endDate = new Date(endDateString);
         endDate.setHours(23, 59, 59, 999);
 
-
         let query = supabaseClient
             .from('users')
             .select(`*, job_vacancies!users_vacancy_id_fkey(*, contracts!inner(*))`)
             .not('employment_status', 'in', '("تغطية", "مستقيل")');
-        
+
+        // --- تطبيق الفلاتر الجديدة على الاستعلام ---
         if (regionVal) {
             query = query.eq('region', regionVal);
         }
+        if (cityVal) {
+            query = query.eq('city', cityVal);
+        }
         if (projectVal) {
-            // ملاحظة: بما أن المشروع قد يكون قائمة، نستخدم `cs` (contains)
             query = query.filter('project', 'cs', `{${projectVal}}`);
         }
         if (locationVal) {
-            query = query.ilike('location', `%${locationVal}%`);
+            query = query.eq('location', locationVal);
         }
 
         const { data: allEmployees, error: e1 } = await query;
-            
 
         const [ 
             { data: attendanceRecords, error: e2 }, { data: leaveRecords, error: e3 }, 
@@ -4057,7 +4427,7 @@ async function generatePayroll() {
         if (e1 || e2 || e3 || e4 || e5 || e6 || e7) throw (e1 || e2 || e3 || e4 || e5 || e6 || e7);
 
         if (allEmployees.length === 0) {
-            resultsContainer.innerHTML = '<p style="text-align: center;">لم يتم العثور على موظفين.</p>';
+            resultsContainer.innerHTML = '<p style="text-align: center;">لم يتم العثور على موظفين يطابقون شروط الفلترة.</p>';
             return;
         }
 
@@ -4070,12 +4440,12 @@ async function generatePayroll() {
             } else {
                 const vacancy = emp.job_vacancies;
                 if (!vacancy || !vacancy.schedule_details?.length) continue;
-                
+
                 const shift = vacancy.schedule_details[0];
                 const fullMonthSalary = (vacancy.base_salary || 0) + (vacancy.housing_allowance || 0) + (vacancy.transport_allowance || 0) + (vacancy.other_allowances || 0);
                 const dailyRate = fullMonthSalary / 30;
                 const hourlyRate = dailyRate / (shift.work_hours || 8);
-                
+
                 let scheduledWorkDays = 0, restDays = 0, absentDays = 0, totalLatenessMinutes = 0;
                 const empStartDate = emp.start_of_work_date ? new Date(emp.start_of_work_date) : null;
                 const effectiveStartDate = (empStartDate && empStartDate > startDate) ? empStartDate : startDate;
@@ -4086,7 +4456,7 @@ async function generatePayroll() {
                         scheduledWorkDays++;
                         const attendanceRecord = attendanceRecords.find(att => att.guard_id === emp.id && new Date(att.created_at).toDateString() === day.toDateString());
                         const isOnLeave = leaveRecords.some(leave => { const d = new Date(leave['details->>start_date']); return leave.user_id === emp.id && day >= d && day < new Date(d.setDate(d.getDate() + parseInt(leave['details->>days']))); });
-                        
+
                         if (attendanceRecord) {
                             const shiftStartTime = new Date(day);
                             const [startHours, startMinutes] = shift.start_time.split(':');
@@ -4102,7 +4472,6 @@ async function generatePayroll() {
                     } else { restDays++; }
                 }
 
-                // --- بداية التعديلات المطلوبة ---
                 const actualWorkDays = scheduledWorkDays - absentDays;
                 const totalWorkHours = actualWorkDays * (shift.work_hours || 8);
                 const permissionRecords = permissionRequests.filter(req => req.user_id === emp.id);
@@ -4113,60 +4482,41 @@ async function generatePayroll() {
                 const latenessDeduction = (totalLatenessMinutes * (hourlyRate / 60));
                 const withdrawalDeductionValue = (dailyRate * withdrawalRecords.length) + (dailyRate * 2 * withdrawalRecords.length);
                 const permissionDeductionValue = dailyRate * permissionRecords.length;
-                // --- نهاية التعديلات المطلوبة ---
 
                 let grossSalary = fullMonthSalary;
                 if (empStartDate && empStartDate > startDate) {
                     const daysInMonth = (endDate - startDate) / (1000 * 60 * 60 * 24) + 1;
                     grossSalary = (fullMonthSalary / daysInMonth) * scheduledWorkDays;
                 }
-                
+
                 const employeeOvertimeTotal = overtimeRecords.filter(o => o.employee_id === emp.id).reduce((total, o) => total + (o.overtime_pay || 0), 0);
                 const otherDeductions = penalties.filter(p => p.user_id === emp.id).reduce((total, p) => total + (p.amount || 0), 0);
                 const isFirstMonth = empStartDate && empStartDate >= startDate && empStartDate <= endDate;
                 const uniformDeduction = isFirstMonth ? 150 : 0;
                 const insuranceDeduction = emp.insurance_status === 'مسجل' ? (emp.insurance_deduction_amount || 0) : 0;
-                
+
                 const totalDeductions = absenceDeduction + latenessDeduction + otherDeductions + uniformDeduction + insuranceDeduction + withdrawalDeductionValue + permissionDeductionValue;
                 const netSalary = (grossSalary + employeeOvertimeTotal) - totalDeductions;
-                
+
                 payrollExportData.push({
-                    "اسم الموظف": emp.name,
-                    "رقم الهوية": emp.id_number,
-                    "حالة الموظف": emp.employment_status,
-                    "المشروع": projectName,
-                    "ايام العمل": actualWorkDays,
-                    "ساعات العمل": totalWorkHours,
-                    "قيمة الساعة": hourlyRate,
-                    "قيمة اليومية": dailyRate,
-                    "الراتب الاساسي": vacancy.base_salary,
-                    "بدل السكن": vacancy.housing_allowance,
-                    "بدل نقل": vacancy.transport_allowance,
-                    "بدلات اخرى": vacancy.other_allowances,
-                    "اجمالي الراتب": fullMonthSalary,
-                    "راحة": restDays,
-                    "عمل اضافي": employeeOvertimeTotal,
-                    "المستحق": grossSalary + employeeOvertimeTotal,
-                    "استقطاع تأمينات": insuranceDeduction,
-                    "خصم الزي": uniformDeduction,
-                    "خصم تأخير": latenessDeduction,
-                    "استئذان": permissionRecords.length, // عدد أيام الاستئذان
-                    "انسحاب": withdrawalRecords.length, // عدد أيام الانسحاب
-                    "ايام الغياب": absentDays,
-                    "خصم الغياب": absenceDeduction,
-                    "خصومات اخرى": otherDeductions,
-                    "مجموع الاستقطاعات": totalDeductions,
-                    "الصافي": netSalary,
-                    "الايبان": emp.iban,
-                    "البنك": emp.bank_name,
+                    "اسم الموظف": emp.name, "رقم الهوية": emp.id_number, "حالة الموظف": emp.employment_status,
+                    "المشروع": projectName, "ايام العمل": actualWorkDays, "ساعات العمل": totalWorkHours,
+                    "قيمة الساعة": hourlyRate, "قيمة اليومية": dailyRate, "الراتب الاساسي": vacancy.base_salary,
+                    "بدل السكن": vacancy.housing_allowance, "بدل نقل": vacancy.transport_allowance,
+                    "بدلات اخرى": vacancy.other_allowances, "اجمالي الراتب": fullMonthSalary, "راحة": restDays,
+                    "عمل اضافي": employeeOvertimeTotal, "المستحق": grossSalary + employeeOvertimeTotal,
+                    "استقطاع تأمينات": insuranceDeduction, "خصم الزي": uniformDeduction,
+                    "خصم تأخير": latenessDeduction, "استئذان": permissionRecords.length,
+                    "انسحاب": withdrawalRecords.length, "ايام الغياب": absentDays, "خصم الغياب": absenceDeduction,
+                    "خصومات اخرى": otherDeductions, "مجموع الاستقطاعات": totalDeductions,
+                    "الصافي": netSalary, "الايبان": emp.iban, "البنك": emp.bank_name,
                 });
             }
         }
-        
-        // (باقي الكود لعرض الجدول في الصفحة لم يتغير)
+
         const tableHeaders = payrollExportData.length > 0 ? Object.keys(payrollExportData[0]).map(key => `<th>${key}</th>`).join('') : '';
         const nonCurrencyColumns = ['اسم الموظف', 'رقم الهوية', 'حالة الموظف', 'موقع العمل', 'المشروع', 'رقم الجوال', 'ايام العمل', 'ساعات العمل', 'راحة', 'ايام الغياب', 'الايبان', 'البنك', 'المنطقة', 'المدينة', 'حالة التأمينات', 'استئذان', 'انسحاب'];
-        
+
         const tableRowsHtml = payrollExportData.map(row => {
             let rowHtml = '<tr>';
             for (const key in row) {
@@ -4192,6 +4542,101 @@ async function generatePayroll() {
         console.error("Payroll Error:", err);
     }
 }
+// ========= نهاية الاستبدال الكامل لدالة generatePayroll =========
+// ==========================================================
+// ===      بداية الإضافة: دالة صفحة إدارة الحضور        ===
+// ==========================================================
+async function loadAttendanceManagementPage() {
+    const container = document.getElementById('attendance-management-table-container');
+    container.innerHTML = '<p style="text-align: center;">جاري تحميل السجلات...</p>';
+
+    try {
+        // --- قراءة قيم الفلاتر الجديدة من الواجهة ---
+        const searchVal = document.getElementById('hr-filter-search-attmgmt').value;
+        const dateFrom = document.getElementById('hr-filter-date-from-attmgmt').value;
+        const dateTo = document.getElementById('hr-filter-date-to-attmgmt').value;
+        const region = document.getElementById('hr-filter-region-attmgmt').value;
+        const city = document.getElementById('hr-filter-city-attmgmt').value;
+        const project = document.getElementById('hr-filter-project-attmgmt').value;
+        const location = document.getElementById('hr-filter-location-attmgmt').value;
+
+        let query = supabaseClient
+            .from('attendance')
+            .select(`*, users!inner(name, region, project, city, location)`) // !inner لربط الفلاتر ببيانات الموظف
+            .order('created_at', { ascending: false });
+
+        // --- تطبيق الفلاتر على الاستعلام ---
+        if (searchVal) {
+            query = query.or(`users.name.ilike.%${searchVal}%,users.id_number.ilike.%${searchVal}%`);
+        }
+        if (dateFrom) {
+            query = query.gte('created_at', dateFrom);
+        }
+        if (dateTo) {
+            let toDate = new Date(dateTo);
+            toDate.setHours(23, 59, 59, 999);
+            query = query.lte('created_at', toDate.toISOString());
+        }
+        if (region) query = query.eq('users.region', region);
+        if (city) query = query.eq('users.city', city);
+        if (project) query = query.filter('users.project', 'cs', `{${project}}`);
+        if (location) query = query.eq('users.location', location);
+
+        // إذا لم تكن هناك أي فلاتر نشطة، اعرض آخر 50 سجل فقط
+        const activeFilters = [searchVal, dateFrom, dateTo, region, city, project, location].filter(Boolean);
+        if (activeFilters.length === 0) {
+            query = query.limit(50);
+        }
+
+        const { data, error } = await query;
+        if (error) throw error;
+
+        if (data.length === 0) {
+            container.innerHTML = '<p style="text-align: center;">لا توجد سجلات تطابق البحث.</p>';
+            return;
+        }
+
+        container.innerHTML = `
+            <table>
+                <thead>
+                    <tr>
+                        <th>اسم الموظف</th>
+                        <th>وقت الحضور</th>
+                        <th>وقت الانصراف</th>
+                        <th>الحالة</th>
+                        <th>إجراء</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${data.map(record => `
+                        <tr>
+                            <td>${record.users ? record.users.name : 'غير معروف'}</td>
+                            <td>${formatGregorianDateTime(record.created_at)}</td>
+                            <td>${record.checkout_at ? formatGregorianDateTime(record.checkout_at) : '-'}</td>
+                            <td><span class="status ${record.status === 'حاضر' ? 'active' : 'inactive'}">${record.status}</span></td>
+                            <td>
+                                <button class="btn btn-secondary btn-sm att-mgmt-edit-btn" 
+                                        data-id="${record.id}" 
+                                        data-name="${record.users ? record.users.name : 'غير معروف'}"
+                                        title="تعديل السجل">
+                                    <i class="ph-bold ph-pencil-simple"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+
+    } catch (err) {
+        container.innerHTML = `<p style="color: red; text-align:center;">حدث خطأ: ${err.message}</p>`;
+        console.error("Attendance Management Page Error:", err);
+    }
+}
+
+// ==========================================================
+// ===                   نهاية الإضافة                    ===
+// ==========================================================
 // ========= نهاية الاستبدال الكامل لدالة generatePayroll =========
 
 async function exportPayrollToExcel(data, filename) {
@@ -4358,11 +4803,11 @@ async function loadPaymentArchive() {
     const tableHeaders = "<th>تاريخ التحويل</th><th>اسم المستلم</th><th>المبلغ</th><th>الآيبان</th><th>تاريخ الوردية</th><th>تم التحويل بواسطة</th>";
     const tableRows = archive.map(a => `
         <tr>
-            <td>${new Date(a.paid_at).toLocaleString('ar-SA')}</td>
+            <td>${formatGregorianDateTime(a.paid_at)}</td>
             <td>${a.covering_guard_name}</td>
             <td>${a.payment_amount} ر.س</td>
             <td>${a.applicant_iban}</td>
-            <td>${new Date(a.shift_date).toLocaleDateString('ar-SA')}</td>
+            <td>${formatGregorianDate(a.shift_date)}</td>
             <td>${a.users.name}</td>
         </tr>
     `).join('');
@@ -4591,7 +5036,7 @@ async function loadHiringPage() {
                 <tr>
                     <td>${req.details.name}</td>
                     <td>${req.details.project}</td>
-                    <td>${new Date(req.created_at).toLocaleDateString('ar-SA')}</td>
+                    <td>${formatGregorianDate(req.created_at)}</td>
                     <td><span class="status ${req.status === 'مقبول' ? 'active' : (req.status === 'مرفوض' ? 'inactive' : 'pending')}">${req.status}</span></td>
                 </tr>
             `).join('')}
@@ -4990,10 +5435,16 @@ navLinks.forEach(link => {
         if (targetPageId === 'page-patrol') loadSupervisorPatrolPage();
         if (targetPageId === 'page-contracts') fetchContracts();
         if (targetPageId === 'page-vacancies') loadVacancyTabData();
-        if (targetPageId === 'page-employees') loadEmployeeTabData();
+        if (targetPageId === 'page-employees') {
+    loadEmployeeTabData();
+    initializeHrFilters('employees'); // تهيئة الفلاتر عند فتح الصفحة لأول مرة
+}
         if (targetPageId === 'page-requests-review') loadRequestsReviewPage();
         if (targetPageId === 'page-hiring') loadHiringPage();
-        if (targetPageId === 'page-penalties') loadPenaltiesPage();
+        if (targetPageId === 'page-penalties') {
+    loadPenaltiesPage();
+    initializeHrFilters('penalties'); // تهيئة الفلاتر عند فتح الصفحة
+}
         if (targetPageId === 'page-coverage-requests') loadCoverageRequestsPage();
         if (targetPageId === 'page-directives-ops') loadOpsDirectivesPage();
         if (targetPageId === 'page-my-directives') loadMyDirectivesPage();
@@ -5009,6 +5460,10 @@ navLinks.forEach(link => {
         if (targetPageId === 'page-supervisor-coverage-apps') loadSupervisorCoverageAppsPage();
         if (targetPageId === 'page-hr-ops-hiring') loadHrOpsHiringPage();
         if (targetPageId === 'page-user-management') loadUserManagementPage();
+        if (targetPageId === 'page-attendance-management') {
+    loadAttendanceManagementPage();
+    initializeHrFilters('attmgmt'); // تهيئة الفلاتر عند فتح الصفحة
+}
         if (targetPageId === 'page-finance-coverage') loadFinanceCoveragePage();
         if (targetPageId === 'page-official-holidays') loadHolidaysPage();
         if (targetPageId === 'page-operations-requests') loadOperationsRequestsPage();
@@ -5017,10 +5472,14 @@ navLinks.forEach(link => {
         if (targetPageId === 'page-requests-archive') loadArchivePage('leave');
         if (targetPageId === 'page-resignation-requests') loadResignationRequests();
         if (targetPageId === 'page-loan-requests') loadLoanRequests();
-        if (targetPageId === 'page-hr-attendance-log') loadHrAttendanceLogPage();
+        if (targetPageId === 'page-hr-attendance-log') {
+    loadHrAttendanceLogPage();
+    initializeHrFilters('attlog'); // تهيئة الفلاتر عند فتح الصفحة
+}
         if (targetPageId === 'page-payroll') {
-            document.getElementById('payroll-results-container').innerHTML = '<p style="text-align: center;">الرجاء اختيار الشهر والضغط على "توليد المسير" لعرض البيانات.</p>';
-        }
+    document.getElementById('payroll-results-container').innerHTML = '<p style="text-align: center;">الرجاء اختيار الشهر والضغط على "توليد المسير" لعرض البيانات.</p>';
+    initializeHrFilters('payroll'); // تهيئة الفلاتر عند فتح الصفحة لأول مرة
+}
         if (targetPageId === 'page-hr-data-entry') {
             document.getElementById('import-results-container').innerHTML = '';
         }
@@ -5617,8 +6076,10 @@ if (saveAttendanceBtn) {
         });
         
         // تحديث الواجهة التي نحن فيها
-        if (document.querySelector('#page-hr-attendance-log:not(.hidden)')) loadHrAttendanceLogPage();
-        if (document.querySelector('#page-guard-attendance:not(.hidden)')) loadGuardAttendancePage();
+        // تحديث الواجهة التي نحن فيها
+if (document.querySelector('#page-hr-attendance-log:not(.hidden)')) loadHrAttendanceLogPage();
+if (document.querySelector('#page-guard-attendance:not(.hidden)')) loadGuardAttendancePage();
+if (document.querySelector('#page-attendance-management:not(.hidden)')) loadAttendanceManagementPage(); // <-- السطر الجديد
     }
     saveAttendanceBtn.disabled = false;
 }
@@ -5732,6 +6193,56 @@ const adminDeleteUserBtn = event.target.closest('.admin-delete-user-btn');
         deleteBtn.click(); // الضغط عليه لتفعيل الأمر
         document.body.removeChild(deleteBtn); // حذف الزر المؤقت
     }
+
+// ================================================================
+// ===      بداية الإضافة: منطق صلاحية تعديل الحضور        ===
+// ================================================================
+const permissionCheckbox = event.target.closest('.attendance-permission-checkbox');
+if (permissionCheckbox) {
+    const userId = permissionCheckbox.dataset.userId;
+    const newState = permissionCheckbox.checked;
+    const actionText = newState ? 'منح' : 'سحب';
+
+    // تعطيل المربع مؤقتاً لمنع النقرات المزدوجة
+    permissionCheckbox.disabled = true;
+
+    try {
+        const { error } = await supabaseClient
+            .from('users')
+            .update({ can_edit_attendance: newState })
+            .eq('id', userId);
+
+        if (error) throw error;
+
+        // تسجيل الإجراء في سجل الأحداث
+        await supabaseClient.from('audit_logs').insert({
+            user_id: currentUser.auth_user_id,
+            user_name: currentUser.name,
+            action_type: 'تغيير صلاحية',
+            details: {
+                target_user_id: userId,
+                action: `${actionText} صلاحية تعديل الحضور`
+            }
+        });
+
+        showToast(`تم ${actionText} الصلاحية بنجاح.`, 'success');
+
+    } catch (error) {
+        console.error('Permission change error:', error);
+        showToast('حدث خطأ أثناء تغيير الصلاحية.', 'error');
+        // في حالة الخطأ، أعد المربع إلى حالته السابقة
+        permissionCheckbox.checked = !newState;
+    } finally {
+        // إعادة تفعيل المربع بعد انتهاء العملية
+        permissionCheckbox.disabled = false;
+    }
+}
+// ================================================================
+// ===                   نهاية الإضافة                    ===
+// ================================================================
+
+
+// --- منطق فتح وإغلاق قائمة الإشعارات ---
 
 // --- منطق فتح وإغلاق قائمة الإشعارات ---
 const bellBtn = event.target.closest('#notification-bell-btn');
@@ -6035,94 +6546,105 @@ if (exportAbsenteeBtn) {
 // ==========================================================
 // ===   بداية الاستبدال الكامل لمنطق زر تسجيل الحضور   ===
 // ==========================================================
+// ==========================================================
+// ===      بداية الاستبدال: منطق تسجيل الحضور الذكي       ===
+// ==========================================================
 if (event.target.closest('#check-in-btn')) {
     const checkInBtn = event.target.closest('#check-in-btn');
-    checkInBtn.disabled = true;
-    checkInBtn.innerHTML = '<i class="ph-fill ph-spinner-gap animate-spin"></i> التحقق...';
+    const attendanceStatus = document.getElementById('attendance-status');
+    let isCheckinCancelled = false;
 
-    const handleLocationError = (geoError) => {
-        console.error('Geolocation Error:', geoError);
-        let title = 'خطأ في تحديد الموقع';
-        let message = 'فشل النظام في الوصول لموقعك. يرجى التأكد من تفعيل خدمات الموقع والمحاولة مرة أخرى.';
-        showCustomAlert(title, message, 'error');
+    // دالة مساعدة للحصول على الموقع مع مهلة زمنية
+    const getLocation = (timeout) => new Promise((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+            enableHighAccuracy: true, timeout, maximumAge: 0
+        });
+    });
+
+    // دالة لإعادة الواجهة للحالة الطبيعية
+    const resetUI = () => {
         checkInBtn.disabled = false;
         checkInBtn.innerHTML = 'تسجيل حضور';
+        attendanceStatus.innerHTML = `<p>حالتك الحالية: <strong>لم تسجل حضور بعد</strong></p>`;
+    };
+
+    // معالج زر الإلغاء
+    const handleCancel = () => {
+        isCheckinCancelled = true;
+        showCustomAlert('تم الإلغاء', 'تم إلغاء عملية البحث عن الموقع.', 'info');
+        resetUI();
     };
 
     try {
+        // --- 1. التحقق من الإعدادات الأساسية ---
         if (!currentUser.vacancy_id) throw new Error('أنت غير معين على شاغر وظيفي حالياً.');
-        
-        // --- بداية التعديل 1: جلب كل البيانات المطلوبة من الشاغر ---
-        const { data: vacancy, error: e1 } = await supabaseClient
-            .from('job_vacancies')
-            .select('contract_id, project, location, region, specific_location, schedule_details')
-            .eq('id', currentUser.vacancy_id)
-            .single();
-        // --- نهاية التعديل 1 ---
-
-        if (e1 || !vacancy) throw new Error('لم يتم العثور على بيانات الشاغر الوظيفي الخاص بك.');
-        
-        const contractId = vacancy.contract_id;
-        if (!contractId) throw new Error('الشاغر الوظيفي غير مرتبط بعقد.');
-
-        if (!vacancy.schedule_details?.[0]) throw new Error('لم يتم العثور على جدول ورديات لك.');
-        const shift = vacancy.schedule_details[0];
-
-        const { data: contract, error: e2 } = await supabaseClient.from('contracts').select('contract_locations').eq('id', contractId).single();
-        if (e2 || !contract) throw new Error('لا يمكن العثور على بيانات العقد المرتبط بك.');
-
+        const { data: vacancy, error: e1 } = await supabaseClient.from('job_vacancies').select('contract_id, project, location, region, specific_location, schedule_details').eq('id', currentUser.vacancy_id).single();
+        if (e1 || !vacancy) throw new Error('لم يتم العثور على بيانات الشاغر الوظيفي.');
+        const { data: contract, error: e2 } = await supabaseClient.from('contracts').select('contract_locations').eq('id', vacancy.contract_id).single();
+        if (e2 || !contract) throw new Error('لا يمكن العثور على بيانات العقد.');
         const locationData = contract.contract_locations.find(loc => loc.name === vacancy.specific_location);
         if (!locationData || !locationData.geofence_link) throw new Error('لم يتم تحديد إحداثيات الموقع في العقد.');
-        
         const siteCoords = parseCoordinates(locationData.geofence_link);
-        if (!siteCoords) throw new Error('إحداثيات موقع العمل في العقد غير صالحة.');
         const radius = locationData.geofence_radius || 200;
+        if (!siteCoords) throw new Error('إحداثيات موقع العمل غير صالحة.');
 
-        checkInBtn.innerHTML = '<i class="ph-fill ph-spinner-gap animate-spin"></i> تحديد موقعك...';
-        
-        navigator.geolocation.getCurrentPosition(async (position) => {
+        // --- 2. بدء عملية البحث الذكي ---
+        checkInBtn.disabled = true;
+        attendanceStatus.innerHTML = `
+            <p style="color: var(--accent-color);">جاري البحث عن إشارة GPS دقيقة...</p>
+            <p style="font-size: 0.9rem; color: var(--text-secondary);">الرجاء البقاء في مكانك لثوانٍ.</p>
+            <button id="cancel-check-in-btn" class="btn btn-secondary btn-sm" style="margin-top: 10px;">إلغاء</button>
+        `;
+        document.getElementById('cancel-check-in-btn').addEventListener('click', handleCancel, { once: true });
+
+        let checkinSuccessful = false;
+        const MAX_ATTEMPTS = 6; // 6 محاولات * 10 ثواني = 60 ثانية كحد أقصى
+        const PRIMARY_ACCURACY = 150;
+        const SECONDARY_ACCURACY = 200; // الدقة المقبولة بعد 4 محاولات
+
+        for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+            if (isCheckinCancelled) break;
+
             try {
+                const position = await getLocation(10000); // مهلة 10 ثواني لكل محاولة
+                const accuracy = position.coords.accuracy;
                 const guardCoords = { lat: position.coords.latitude, lng: position.coords.longitude };
                 const distance = calculateDistance(siteCoords, guardCoords);
-                if (distance > radius) throw new Error(`أنت خارج نطاق العمل. المسافة الحالية: ${Math.round(distance)} متر.`);
-                
-                // --- بداية التعديل 2: إضافة كل الحقول المطلوبة عند الحفظ ---
-                const { error: insertError } = await supabaseClient.from('attendance').insert({
-                    guard_id: currentUser.id,
-                    guard_name: currentUser.name,
-                    vacancy_id: currentUser.vacancy_id,
-                    project: vacancy.project,
-                    location: vacancy.specific_location,
-                    region: vacancy.region,
-                    city: vacancy.location,
-                    checkin_lat: guardCoords.lat,
-                    checkin_lon: guardCoords.lng,
-                    status: 'حاضر'
-                });
-                // --- نهاية التعديل 2 ---
 
-                if (insertError) {
-                    console.error('Detailed Supabase Insert Error:', insertError);
-                    throw new Error('حدث خطأ أثناء محاولة تسجيل حضورك في قاعدة البيانات.');
+                // التحقق من الدقة والمسافة
+                const isPrimarySuccess = accuracy < PRIMARY_ACCURACY && distance <= radius;
+                const isSecondarySuccess = attempt > 4 && accuracy < SECONDARY_ACCURACY && distance <= radius;
+
+                if (isPrimarySuccess || isSecondarySuccess) {
+                    const { error: insertError } = await supabaseClient.from('attendance').insert({
+                        guard_id: currentUser.id, guard_name: currentUser.name, vacancy_id: currentUser.vacancy_id, project: vacancy.project,
+                        location: vacancy.specific_location, region: vacancy.region, city: vacancy.location,
+                        checkin_lat: guardCoords.lat, checkin_lon: guardCoords.lng, status: 'حاضر'
+                    });
+                    if (insertError) throw insertError;
+
+                    showCustomAlert('نجاح', `تم تسجيل حضورك بنجاح بدقة ${accuracy.toFixed(0)} متر.`, 'success');
+                    loadAttendancePage();
+                    checkinSuccessful = true;
+                    break;
+                } else if (accuracy < SECONDARY_ACCURACY && distance > radius) {
+                    throw new Error(`أنت خارج نطاق العمل. المسافة الحالية: ${Math.round(distance)} متر.`);
                 }
-                
-                showCustomAlert('نجاح', 'تم تسجيل حضورك بنجاح.', 'success');
-                loadAttendancePage();
-            } catch (innerError) {
-                showCustomAlert('خطأ', innerError.message, 'error');
-                checkInBtn.disabled = false;
-                checkInBtn.innerHTML = 'تسجيل حضور';
+
+            } catch (geoError) {
+                if (geoError.code === 1) throw new Error("يرجى السماح بالوصول للموقع لتسجيل الحضور.");
             }
-        }, handleLocationError, { 
-            enableHighAccuracy: true,
-            timeout: 20000,
-            maximumAge: 0
-        });
+        }
+
+        if (!checkinSuccessful && !isCheckinCancelled) {
+            throw new Error("تعذر الحصول على إشارة GPS دقيقة. يرجى المحاولة من مكان أكثر انفتاحاً.");
+        }
 
     } catch (error) {
-        showCustomAlert('خطأ في الإعدادات', error.message, 'error');
-        checkInBtn.disabled = false;
-        checkInBtn.innerHTML = 'تسجيل حضور';
+        if (!isCheckinCancelled) {
+            showCustomAlert('خطأ', error.message, 'error');
+            resetUI();
+        }
     }
 }
 
@@ -6914,6 +7436,63 @@ if (archiveTab) {
         loadHrAttendanceLogPage(filters);
     }
    
+    // --- بداية الإضافة: تفعيل فلاتر صفحة إدارة الحضور ---
+        if (event.target.id === 'att-mgmt-search-btn') {
+            const filters = {
+                searchTerm: document.getElementById('att-mgmt-search-input').value,
+                dateFrom: document.getElementById('att-mgmt-date-from').value,
+                dateTo: document.getElementById('att-mgmt-date-to').value,
+            };
+            loadAttendanceManagementPage(filters);
+        }
+        // --- نهاية الإضافة ---
+
+        // ================================================================
+// ===       بداية الإضافة: تفعيل زر التعديل في صفحة إدارة الحضور       ===
+// ================================================================
+const attMgmtEditBtn = event.target.closest('.att-mgmt-edit-btn');
+if (attMgmtEditBtn) {
+    const recordId = attMgmtEditBtn.dataset.id;
+    const guardName = attMgmtEditBtn.dataset.name;
+    const modal = document.getElementById('admin-edit-attendance-modal');
+
+    // إعادة تعيين الحقول
+    document.getElementById('edit-attendance-title').textContent = `تعديل سجل: ${guardName}`;
+    document.getElementById('edit-attendance-id').value = '';
+    document.getElementById('edit-attendance-status').value = 'حاضر';
+    document.getElementById('edit-checkin-time').value = '';
+    document.getElementById('edit-checkout-time').value = '';
+
+    // دالة مساعدة لتحويل التوقيت لصيغة يفهمها حقل الإدخال
+    const toLocalISOString = (date) => {
+        if (!date) return '';
+        const d = new Date(date);
+        d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+        return d.toISOString().slice(0, 16);
+    };
+
+    // جلب أحدث بيانات السجل من قاعدة البيانات قبل عرضها
+    const { data: record, error } = await supabaseClient
+        .from('attendance')
+        .select('*')
+        .eq('id', recordId)
+        .single();
+
+    if (record) {
+        document.getElementById('edit-attendance-id').value = record.id;
+        document.getElementById('edit-attendance-status').value = record.status;
+        document.getElementById('edit-checkin-time').value = toLocalISOString(record.created_at);
+        document.getElementById('edit-checkout-time').value = toLocalISOString(record.checkout_at);
+    } else {
+        alert('لم يتم العثور على السجل. قد يكون قد تم حذفه.');
+        return;
+    }
+
+    modal.classList.remove('hidden');
+}
+// ================================================================
+// ===                        نهاية الإضافة                     ===
+// ================================================================
 
     // --- بداية الإضافة: منطق البحث في الخريطة ---
     const mapSearchBtn = event.target.closest('#map-search-btn');
@@ -7937,7 +8516,7 @@ async function loadSupervisorDirectivesHistory() {
             case 'rejected': statusClass = 'inactive'; statusText = 'تم الرفض'; break;
             default: statusClass = 'pending'; statusText = 'مرسل';
         }
-        const date = new Date(d.created_at).toLocaleString('ar-SA');
+        const date = formatGregorianDateTime(d.created_at);
         
         let notesFooter = '';
         if (d.status === 'rejected' && d.rejection_reason) {
@@ -10038,7 +10617,7 @@ async function loadMyRequestsPage() {
                     <span class="status-badge ${statusClass}">${statusText}</span>
                 </div>
                 <div class="request-card-body">
-                    <p><strong>تاريخ الطلب:</strong> ${new Date(request.created_at).toLocaleDateString('ar-SA')}</p>
+                    <p><strong>تاريخ الطلب:</strong> ${formatGregorianDate(request.created_at)}</p>
                     ${request.details && request.details.reason ? `<p><strong>السبب:</strong> ${request.details.reason}</p>` : ''}
                     ${request.details && request.details.days ? `<p><strong>عدد الأيام:</strong> ${request.details.days}</p>` : ''}
                     ${request.details && request.details.amount ? `<p><strong>المبلغ:</strong> ${request.details.amount} ر.س</p>` : ''}
