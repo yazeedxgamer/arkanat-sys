@@ -2139,6 +2139,7 @@ async function fetchContracts() {
 // ===   بداية دالة صفحة إدارة الحضور   ===
 // ==========================================================
 async function loadAttendanceManagementPage() {
+    await initializeHrFilters('att-manage');
     const container = document.getElementById('attendance-management-results');
     container.innerHTML = '<p style="text-align: center;">جاري تحميل السجلات...</p>';
 
@@ -4127,13 +4128,15 @@ async function loadLoanRequests() {
 
 // بداية الاستبدال
 // ========= بداية الاستبدال الكامل للدالة =========
-async function loadHrAttendanceLogPage() {
+async function loadHrAttendanceLogPage(filters = {}) {
+    await initializeHrFilters('att-log');
     const container = document.getElementById('hr-attendance-accordion-container');
     container.innerHTML = '<p style="text-align: center;">جاري تحميل السجلات...</p>';
 
     try {
         let query = supabaseClient.from('attendance').select(`*, users!inner(*) `).order('created_at', { ascending: false });
 
+        // تطبيق الفلاتر
         const fromDate = document.getElementById('hr-filter-from-date-att-log').value;
         const toDate = document.getElementById('hr-filter-to-date-att-log').value;
         if (fromDate) query = query.gte('created_at', fromDate);
@@ -4885,10 +4888,6 @@ async function fetchStatistics() {
 
 document.addEventListener('DOMContentLoaded', function() {
 
-
-    
-
-
 // ==========================================================
 // ===     بداية منطق التفاعل المترابط للفلاتر (مع التحديث المباشر)     ===
 // ==========================================================
@@ -5243,7 +5242,10 @@ navLinks.forEach(link => {
 }
         if (targetPageId === 'page-requests-review') loadRequestsReviewPage();
         if (targetPageId === 'page-hiring') loadHiringPage();
-        if (targetPageId === 'page-penalties') loadPenaltiesPage();
+        if (targetPageId === 'page-penalties') {
+    await initializeHrFilters('penalties');
+    loadPenaltiesPage();
+}
         if (targetPageId === 'page-coverage-requests') loadCoverageRequestsPage();
         if (targetPageId === 'page-directives-ops') loadOpsDirectivesPage();
         if (targetPageId === 'page-my-directives') loadMyDirectivesPage();
