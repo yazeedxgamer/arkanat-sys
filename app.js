@@ -1,112 +1,5 @@
 
 // ==========================================================
-// ===       دوال مساعدة جديدة لتوحيد صيغة التاريخ الميلادي       ===
-// ==========================================================
-function formatGregorianDate(dateString) {
-    if (!dateString) return 'غير محدد';
-    const date = new Date(dateString);
-    if (isNaN(date)) return 'تاريخ غير صالح';
-    
-    return date.toLocaleDateString('ar-EG', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        calendar: 'gregory'
-    });
-}
-
-function formatGregorianDateTime(dateString) {
-    if (!dateString) return 'غير محدد';
-    const date = new Date(dateString);
-    if (isNaN(date)) return 'تاريخ غير صالح';
-
-    return date.toLocaleString('ar-EG', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true,
-        calendar: 'gregory'
-    });
-}
-
-// ==========================================================
-// ===   بداية نظام الفلترة الذكي للموارد البشرية   ===
-// ==========================================================
-
-// متغير عالمي لتخزين بيانات الفلاتر لتجنب إعادة تحميلها في كل مرة
-let hrFilterData = null;
-
-// دالة لجلب وتجهيز بيانات الفلاتر من قاعدة البيانات
-async function initializeHrFilters(pagePrefix) {
-    if (hrFilterData) return; // لا تقم بالتحميل مرة أخرى إذا كانت البيانات موجودة
-
-    console.log("Initializing HR Filters...");
-    const { data: contracts, error } = await supabaseClient
-        .from('contracts')
-        .select('region, city, company_name, contract_locations');
-
-    if (error) {
-        console.error("Error fetching data for filters:", error);
-        return;
-    }
-
-    // بناء هيكل بيانات مترابط
-    const structuredData = {};
-    contracts.forEach(contract => {
-        if (!contract.region || !contract.city) return;
-        const region = contract.region;
-        const cities = Array.isArray(contract.city) ? contract.city : [contract.city];
-        const project = contract.company_name;
-
-        if (!structuredData[region]) structuredData[region] = {};
-        
-        cities.forEach(city => {
-            if (!structuredData[region][city]) structuredData[region][city] = {};
-            if (!structuredData[region][city][project]) structuredData[region][city][project] = [];
-
-            if (contract.contract_locations) {
-                contract.contract_locations.forEach(loc => {
-                    if (loc.city === city && !structuredData[region][city][project].includes(loc.name)) {
-                        structuredData[region][city][project].push(loc.name);
-                    }
-                });
-            }
-        });
-    });
-    hrFilterData = structuredData;
-
-    // تعبئة قائمة المناطق
-    const regionSelect = document.getElementById(`hr-filter-region-${pagePrefix}`);
-    if (regionSelect) {
-        regionSelect.innerHTML = '<option value="">كل المناطق</option>';
-        Object.keys(hrFilterData).sort().forEach(region => {
-            regionSelect.innerHTML += `<option value="${region}">${region}</option>`;
-        });
-    }
-}
-
-// دالة مساعدة لتطبيق الفلاتر المحددة على أي استعلام Supabase
-function applyHrFiltersToQuery(query, pagePrefix) {
-    const region = document.getElementById(`hr-filter-region-${pagePrefix}`)?.value;
-    const city = document.getElementById(`hr-filter-city-${pagePrefix}`)?.value;
-    const project = document.getElementById(`hr-filter-project-${pagePrefix}`)?.value;
-    const location = document.getElementById(`hr-filter-location-${pagePrefix}`)?.value;
-    const search = document.getElementById(`hr-filter-search-${pagePrefix}`)?.value;
-
-    if (region) query = query.eq('region', region);
-    if (city) query = query.eq('city', city);
-    if (project) query = query.filter('project', 'cs', `{${project}}`);
-    if (location) query = query.eq('location', location);
-    if (search) query = query.or(`name.ilike.%${search}%,id_number.ilike.%${search}%`);
-
-    return query;
-}
-// ==========================================================
-// ===    نهاية نظام الفلترة الذكي للموارد البشرية    ===
-// ==========================================================
-// ==========================================================
 // ===       دالة تحميل قالب إدخال العقود بالعربي        ===
 // ==========================================================
 async function downloadContractTemplate() {
@@ -1624,7 +1517,7 @@ async function loadAuditLogs(filters = {}) {
                 <tbody>
                     ${data.map(log => `
                         <tr>
-                            <td>${formatGregorianDateTime(log.created_at)}</td>
+                            <td>${new Date(log.created_at).toLocaleString('ar-SA')}</td>
                             <td>${log.user_name || 'نظام'}</td>
                             <td>${log.users?.role || 'غير محدد'}</td>
                             <td><span class="status pending">${log.action_type}</span></td>
@@ -1918,25 +1811,9 @@ function updateUIVisibility(role) {
 
     allMenuItems.forEach(item => {
         const allowedRoles = item.dataset.role ? item.dataset.role.split(',') : [];
-        const pageId = item.querySelector('a')?.dataset.page;
 
-        let isVisible = false;
-        // التحقق الأساسي من الأدوار
+        // التعديل هنا: تحقق إذا كانت القائمة تحتوي على الدور الحالي أو تحتوي على 'all'
         if (allowedRoles.includes(role) || allowedRoles.includes('all')) {
-            isVisible = true;
-        }
-
-        // --- بداية الإضافة: شرط خاص لصفحة إدارة الحضور ---
-        if (pageId === 'page-attendance-management') {
-            if (currentUser.role === 'مدير النظام' || (currentUser.role === 'ادارة الموارد البشرية' && currentUser.can_edit_attendance === true)) {
-                isVisible = true;
-            } else {
-                isVisible = false;
-            }
-        }
-        // --- نهاية الإضافة ---
-
-        if (isVisible) {
             item.style.display = 'block';
         } else {
             item.style.display = 'none';
@@ -2134,62 +2011,6 @@ async function fetchContracts() {
 // نهاية الاستبدال
 // ------------------------------------
 // ------------------------------------
-
-// ==========================================================
-// ===   بداية دالة صفحة إدارة الحضور   ===
-// ==========================================================
-async function loadAttendanceManagementPage() {
-    await initializeHrFilters('att-manage');
-    const container = document.getElementById('attendance-management-results');
-    container.innerHTML = '<p style="text-align: center;">جاري تحميل السجلات...</p>';
-
-    try {
-        let query = supabaseClient.from('attendance').select(`*, users!inner(*)`).order('created_at', { ascending: false }).limit(50);
-
-        const fromDate = document.getElementById('hr-filter-from-date-att-manage').value;
-        const toDate = document.getElementById('hr-filter-to-date-att-manage').value;
-        if (fromDate) query = query.gte('created_at', fromDate);
-        if (toDate) {
-            let toDateObj = new Date(toDate);
-            toDateObj.setHours(23, 59, 59, 999);
-            query = query.lte('created_at', toDateObj.toISOString());
-        }
-
-        query = applyHrFiltersToQuery(query, 'att-manage');
-
-        const { data, error } = await query;
-        if (error) throw error;
-
-        if (data.length === 0) {
-            container.innerHTML = '<p style="text-align: center;">لا توجد سجلات تطابق البحث.</p>';
-            return;
-        }
-
-        container.innerHTML = `
-            <table><thead><tr>
-                <th>الموظف</th><th>وقت الحضور</th><th>وقت الانصراف</th><th>الحالة</th><th>إجراء</th>
-            </tr></thead><tbody>
-            ${data.map(r => `
-                <tr>
-                    <td>${r.users ? r.users.name : 'غير معروف'}</td>
-                    <td>${formatGregorianDateTime(r.created_at)}</td>
-                    <td>${formatGregorianDateTime(r.checkout_at)}</td>
-                    <td><span class="status ${r.status === 'حاضر' || r.status === 'اكمل المناوبة' ? 'active' : 'inactive'}">${r.status}</span></td>
-                    <td><button class="btn btn-secondary btn-sm admin-edit-attendance-btn" data-id="${r.id}" data-name="${r.users ? r.users.name : ''}"><i class="ph-bold ph-pencil-simple"></i> تعديل</button></td>
-                </tr>
-            `).join('')}
-            </tbody></table>`;
-
-    } catch (err) {
-        container.innerHTML = `<p style="color: red;">حدث خطأ: ${err.message}</p>`;
-        console.error("Attendance Management Error:", err);
-    }
-}
-// ==========================================================
-// ===    نهاية دالة صفحة إدارة الحضور    ===
-// ==========================================================
-
-
 // --- دالة لبناء واجهة صفحة الحضور للحارس مع التحقق من الحالة (نسخة مصححة) ---
 // ==================== بداية الاستبدال ====================
 async function loadAttendancePage() {
@@ -2351,11 +2172,8 @@ async function startPersistentTracking(fullUser, attendanceId) {
     const locationStatus = document.getElementById('location-status');
     if (locationStatus) locationStatus.innerHTML = `<p style="color: #22c55e;">التتبع المباشر فعال.</p>`;
 
-    const UPDATE_INTERVAL_MS = 30000;
-    // --- بداية الإضافة: تحديد الحد الأدنى للدقة بالمتر ---
-    // لن نثق بأي قراءة للموقع يكون هامش الخطأ فيها أكبر من هذا الرقم
-    const MINIMUM_GPS_ACCURACY_METERS = 150; 
-    // --- نهاية الإضافة ---
+    // يمكنك تغيير هذا الرقم. 30000 تعني 30 ثانية.
+    const UPDATE_INTERVAL_MS = 15000;
 
     const handleTrackingError = (geoError) => {
         console.error("خطأ في التتبع المستمر:", geoError);
@@ -2376,19 +2194,12 @@ async function startPersistentTracking(fullUser, attendanceId) {
         const radius = locationData.geofence_radius || 200;
         if (!siteCoords) throw new Error('إحداثيات الموقع في العقد غير صالحة.');
 
+        // دالة ليتم استدعاؤها بشكل دوري
         const updateLocation = () => {
             navigator.geolocation.getCurrentPosition(
                 async (position) => {
-                    // --- بداية الإضافة: التحقق من دقة الموقع ---
-                    if (position.coords.accuracy > MINIMUM_GPS_ACCURACY_METERS) {
-                        console.warn(`تم تجاهل قراءة الموقع الحالية بسبب دقتها المنخفضة: ${position.coords.accuracy} متر.`);
-                        if (locationStatus) locationStatus.innerHTML = `<p style="color: #f59e0b;">جاري البحث عن إشارة GPS دقيقة...</p>`;
-                        return; // الخروج من الدالة وانتظار التحديث التالي
-                    }
-                    if (locationStatus) locationStatus.innerHTML = `<p style="color: #22c55e;">التتبع المباشر فعال.</p>`;
-                    // --- نهاية الإضافة ---
-
                     const { latitude, longitude } = position.coords;
+                    // تحديث الموقع الحالي في جدول المواقع المباشرة
                     supabaseClient.from('guard_locations').upsert({ guard_id: fullUser.id, latitude, longitude }, { onConflict: 'guard_id' }).then();
                     
                     const distance = calculateDistance(siteCoords, { lat: latitude, lng: longitude });
@@ -2405,7 +2216,10 @@ async function startPersistentTracking(fullUser, attendanceId) {
             );
         };
 
+        // قم بتشغيل الدالة مرة واحدة فوراً
         updateLocation();
+
+        // ثم قم بتعيينها لتعمل كل فترة زمنية محددة
         locationUpdateInterval = setInterval(updateLocation, UPDATE_INTERVAL_MS);
 
     } catch(err) {
@@ -2484,65 +2298,32 @@ async function loadUserManagementPage() {
     const container = document.getElementById('user-management-table-container');
     container.innerHTML = '<p style="text-align: center;">جاري تحميل قائمة المستخدمين...</p>';
 
-    // --- بداية التعديل 1: جلب العمود الجديد ---
-    const { data: users, error } = await supabaseClient
-        .from('users')
-        .select('*, can_edit_attendance') // جلب الصلاحية الجديدة
-        .order('name', { ascending: true });
-    // --- نهاية التعديل 1 ---
-
-    if (error) { 
-        container.innerHTML = '<p style="color:red;">حدث خطأ في جلب المستخدمين.</p>'; 
-        return; 
-    }
+    const { data: users, error } = await supabaseClient.from('users').select('*').order('name', { ascending: true });
+    if (error) { container.innerHTML = '<p style="color:red;">حدث خطأ في جلب المستخدمين.</p>'; return; }
 
     container.innerHTML = `
         <table>
             <thead>
-                <tr>
-                    <th>الاسم</th>
-                    <th>الدور</th>
-                    <th>المشروع</th>
-                    <th>الحالة</th>
-                    <th>صلاحية تعديل الحضور</th> 
-                    <th>إجراءات</th>
-                </tr>
+                <tr><th>الاسم</th><th>الدور</th><th>المشروع</th><th>الحالة</th><th>إجراءات</th></tr>
             </thead>
             <tbody>
-                ${users.map(user => {
-                    // --- بداية التعديل 2: منطق إنشاء مربع الاختيار ---
-                    let permissionCheckboxHtml = '';
-                    if (user.role === 'ادارة الموارد البشرية') {
-                        const isChecked = user.can_edit_attendance ? 'checked' : '';
-                        permissionCheckboxHtml = `
-                            <label class="switch">
-                                <input type="checkbox" class="edit-attendance-permission-checkbox" data-user-id="${user.id}" ${isChecked}>
-                                <span class="slider round"></span>
-                            </label>
-                        `;
-                    }
-                    // --- نهاية التعديل 2 ---
-
-                    return `
-                        <tr>
-                            <td>${user.name}</td>
-                            <td>${user.role}</td>
-                            <td>${Array.isArray(user.project) ? user.project.join(', ') : (user.project || '-')}</td>
-                            <td><span class="status ${user.status === 'active' ? 'active' : 'inactive'}">${user.status === 'active' ? 'نشط' : 'غير نشط'}</span></td>
-                            <td>${permissionCheckboxHtml}</td>
-                            <td>
-                                <button class="btn btn-secondary btn-sm admin-edit-user-btn" data-id="${user.id}" title="تعديل"><i class="ph-bold ph-pencil-simple"></i></button>
-                                <button class="btn btn-danger btn-sm admin-delete-user-btn" data-id="${user.id}" data-auth-id="${user.auth_user_id}" title="حذف"><i class="ph-bold ph-trash"></i></button>
-                                <button class="btn btn-secondary btn-sm admin-reset-password-btn" data-auth-id="${user.auth_user_id}" title="إعادة تعيين كلمة المرور"><i class="ph-bold ph-key"></i></button>
-                                <button class="btn btn-secondary btn-sm admin-login-as-btn" data-user-id="${user.auth_user_id}" data-user-name="${user.name}" title="تسجيل الدخول كـ ${user.name}"><i class="ph-bold ph-sign-in"></i></button>
+                ${users.map(user => `
+                    <tr>
+                        <td>${user.name}</td>
+                        <td>${user.role}</td>
+                        <td>${user.project || '-'}</td>
+                        <td><span class="status ${user.status === 'active' ? 'active' : 'inactive'}">${user.status === 'active' ? 'نشط' : 'غير نشط'}</span></td>
+                        <td>
+                            <button class="btn btn-secondary btn-sm admin-edit-user-btn" data-id="${user.id}" title="تعديل"><i class="ph-bold ph-pencil-simple"></i></button>
+                            <button class="btn btn-danger btn-sm admin-delete-user-btn" data-id="${user.id}" data-auth-id="${user.auth_user_id}" title="حذف"><i class="ph-bold ph-trash"></i></button>
+                            <button class="btn btn-secondary btn-sm admin-reset-password-btn" data-auth-id="${user.auth_user_id}" title="إعادة تعيين كلمة المرور"><i class="ph-bold ph-key"></i></button>
+                            <button class="btn btn-secondary btn-sm admin-login-as-btn" data-user-id="${user.auth_user_id}" data-user-name="${user.name}" title="تسجيل الدخول كـ ${user.name}"><i class="ph-bold ph-sign-in"></i></button>
                             </td>
-                        </tr>
-                    `;
-                }).join('')}
+                    </tr>
+                `).join('')}
             </tbody>
         </table>`;
 }
-
 // ------------------------------------
 
 // --- الخطوة 13: تحديث دالة الخريطة لجلب مواقع الحراس ---
@@ -2746,14 +2527,14 @@ async function fetchSchedules() {
 // ------------------------------------
 
 
-async function loadPenaltiesPage() {
-    await initializeHrFilters('penalties');
+async function loadPenaltiesPage(searchTerm = '') {
     const container = document.getElementById('penalties-employee-list');
     container.innerHTML = '<p style="text-align: center;">جاري تحميل الموظفين...</p>';
 
     let query = supabaseClient.from('users').select('id, name, role, project');
-    query = applyHrFiltersToQuery(query, 'penalties');
-    
+    if (searchTerm) {
+        query = query.ilike('name', `%${searchTerm}%`);
+    }
     const { data: employees, error } = await query.order('name');
 
     if (error) {
@@ -2769,7 +2550,7 @@ async function loadPenaltiesPage() {
         <div class="attendance-card">
             <div>
                 <span>${emp.name}</span>
-                <p class="time">${emp.role} - ${(Array.isArray(emp.project) ? emp.project.join(', ') : emp.project) || 'غير محدد'}</p>
+                <p class="time">${emp.role} - ${emp.project || 'غير محدد'}</p>
             </div>
             <button class="btn btn-danger add-penalty-btn" data-user-id="${emp.id}" data-user-name="${emp.name}">
                 <i class="ph-bold ph-minus-circle"></i> إضافة عقوبة
@@ -2861,7 +2642,8 @@ async function loadMyVisitsPage() {
 
     container.innerHTML = visits.map(visit => {
         const visitTimestamp = new Date(visit.visit_time);
-        const visitDateTime = formatGregorianDateTime(visit.visit_time);
+        const visitDate = visitTimestamp.toLocaleDateString('ar-SA', { day: 'numeric', month: 'long' });
+        const visitTime = visitTimestamp.toLocaleTimeString('ar-SA', { hour: 'numeric', minute: '2-digit' });
 
         // تصحيح: عرض اسم الموقع من الزيارة مباشرة
         const locationDisplay = visit.location_name || 'موقع غير محدد';
@@ -2872,7 +2654,7 @@ async function loadMyVisitsPage() {
                 <div class="visit-details">
                     <h4>زيارة إلى: ${locationDisplay}</h4>
                     <p class="visit-meta">
-                        <span><i class="ph-bold ph-calendar"></i> ${visitDateTime}</span>
+                        <span><i class="ph-bold ph-calendar"></i> ${visitDate} - ${visitTime}</span>
                     </p>
                     <p class="visit-notes">${visit.notes || 'لا توجد ملاحظات.'}</p>
                 </div>
@@ -3209,7 +2991,7 @@ async function loadHrOpsHiringPage(tab = 'new') {
             </div>
             <div class="review-request-body">
                 <p><strong>الوظيفة:</strong> ${app.job_vacancies.title} في مشروع ${app.job_vacancies.project}</p>
-                <p><strong>تاريخ التقديم:</strong> ${formatGregorianDate(app.created_at)}</p>
+                <p><strong>تاريخ التقديم:</strong> ${new Date(app.created_at).toLocaleDateString('ar-SA')}</p>
             </div>
             <div class="review-request-footer">
                 <button class="btn btn-secondary view-applicant-details-btn" data-appid="${app.id}"><i class="ph-bold ph-eye"></i> عرض التفاصيل</button>
@@ -3663,7 +3445,7 @@ async function fetchVisits() {
                     <h4>زيارة إلى: ${locationDisplay}</h4>
                     <p class="visit-meta">
                         <span><i class="ph-bold ph-user-circle"></i> المشرف: ${visit.users.name}</span>
-                        <span><i class="ph-bold ph-calendar"></i> ${visitDateTime}</span>
+                        <span><i class="ph-bold ph-calendar"></i> ${visitDate} - ${visitTime}</span>
                     </p>
                     <p class="visit-notes">${visit.notes || 'لا توجد ملاحظات.'}</p>
                 </div>
@@ -3912,21 +3694,38 @@ async function loadVacancyTabData() {
 }
 // دالة تحميل تبويب الموظفين
 async function loadEmployeeTabData() {
-    // استدعاء دالة تهيئة الفلاتر لهذه الصفحة
-    await initializeHrFilters('employees');
-
     const container = document.getElementById('employees-list-container');
     container.innerHTML = '<p style="text-align: center;">جاري تحميل الموظفين...</p>';
+// -- بداية الإضافة: قراءة قيم جميع الفلاتر --
+    const searchVal = document.getElementById('employee-search-input').value;
+    const roleVal = document.getElementById('employee-role-filter').value;
+    const regionVal = document.getElementById('employee-region-filter').value;
+    const projectVal = document.getElementById('employee-project-filter').value;
+    const locationVal = document.getElementById('employee-location-filter').value;
+    // -- نهاية الإضافة --
 
-    let query = supabaseClient.from('users').select(`id, name, role, project, location, phone, employment_status, auth_user_id`);
-    
-    // تطبيق الفلاتر المحددة من الواجهة
-    query = applyHrFiltersToQuery(query, 'employees');
-    
+    let query = supabaseClient.from('users').select(`id, name, role, project, phone, employment_status, auth_user_id`);
+
+    if (searchVal) {
+        query = query.or(`name.ilike.%${searchVal}%,id_number.ilike.%${searchVal}%`);
+    }
+    if (roleVal) {
+        query = query.eq('role', roleVal);
+    }
+    if (regionVal) {
+        query = query.eq('region', regionVal);
+    }
+    if (projectVal) {
+        query = query.filter('project', 'cs', `{${projectVal}}`);
+    }
+    if (locationVal) {
+        query = query.ilike('location', `%${locationVal}%`);
+    }
+
     const { data: employees, error } = await query.order('name', { ascending: true });
 
     if (error) {
-        container.innerHTML = '<p style-align: center; color: red;">حدث خطأ في تحميل الموظفين.</p>';
+        container.innerHTML = '<p style="text-align: center; color: red;">حدث خطأ في تحميل الموظفين.</p>';
         return console.error(error);
     }
     if (employees.length === 0) {
@@ -3937,8 +3736,8 @@ async function loadEmployeeTabData() {
     container.innerHTML = `<table><thead><tr>
         <th>الاسم</th>
         <th>الدور</th>
-        <th>الجوال</th>
-        <th>المشروع / الموقع</th>
+        <th>رقم الجوال</th>
+        <th>المشروع</th>
         <th>الحالة الوظيفية</th>
         <th>إجراءات</th>
     </tr></thead><tbody id="employees-table-body"></tbody></table>`;
@@ -3954,23 +3753,34 @@ async function loadEmployeeTabData() {
         } else if (statusText === 'بديل راحة' || statusText === 'تغطية') {
             statusClass = 'pending';
         }
-        
-        const projectDisplay = (Array.isArray(emp.project) && emp.project.length > 0) ? emp.project.join(' - ') : (emp.project || 'غير معين');
-        const locationInfo = `${projectDisplay} / ${emp.location || 'غير محدد'}`;
+
+        let projectDisplay = 'غير معين';
+        if (Array.isArray(emp.project)) {
+            projectDisplay = emp.project.join(' - ');
+        } else if (emp.project) {
+            projectDisplay = emp.project;
+        }
+
+        // --- بداية الإضافة: منطق تعطيل الأزرار ---
         let isDisabled = false;
         let disabledTitle = '';
         if (currentUser.role === 'ادارة الموارد البشرية' && emp.role === 'مدير النظام') {
             isDisabled = true;
             disabledTitle = 'لا يمكن التعديل على مدير النظام';
         }
+        // --- نهاية الإضافة ---
 
         tableBody.insertAdjacentHTML('beforeend', `
             <tr>
                 <td>${emp.name || 'غير متوفر'}</td>
                 <td>${emp.role || 'غير محدد'}</td>
                 <td>${emp.phone || 'غير مسجل'}</td>
-                <td>${locationInfo}</td>
-                <td><span class="status ${statusClass}">${statusText}</span></td>
+                <td>${projectDisplay}</td>
+                <td>
+                    <span class="status ${statusClass}">
+                        ${statusText}
+                    </span>
+                </td>
                 <td>
                     <button class="btn btn-secondary edit-employee-btn" data-id="${emp.id}" ${isDisabled ? `disabled title="${disabledTitle}"` : ''}><i class="ph-bold ph-pencil-simple"></i> تعديل</button>
                     <button class="btn btn-danger delete-employee-btn" data-id="${emp.id}" data-auth-id="${emp.auth_user_id}" ${isDisabled ? `disabled title="${disabledTitle}"` : ''}><i class="ph-bold ph-trash"></i> حذف</button>
@@ -3979,7 +3789,6 @@ async function loadEmployeeTabData() {
         `);
     });
 }
-
 // دالة مطورة لتحميل وعرض الطلبات في صفحة مراجعة الطلبات
 // دالة مطورة لتحميل وعرض الطلبات في صفحة مراجعة الطلبات بالتصميم الاحترافي
 // بداية الاستبدال
@@ -4129,24 +3938,17 @@ async function loadLoanRequests() {
 // بداية الاستبدال
 // ========= بداية الاستبدال الكامل للدالة =========
 async function loadHrAttendanceLogPage(filters = {}) {
-    await initializeHrFilters('att-log');
     const container = document.getElementById('hr-attendance-accordion-container');
     container.innerHTML = '<p style="text-align: center;">جاري تحميل السجلات...</p>';
 
     try {
-        let query = supabaseClient.from('attendance').select(`*, users!inner(*) `).order('created_at', { ascending: false });
+        let query = supabaseClient.from('attendance').select(`*, users ( name, region, project, location )`).order('created_at', { ascending: false });
 
-        // تطبيق الفلاتر
-        const fromDate = document.getElementById('hr-filter-from-date-att-log').value;
-        const toDate = document.getElementById('hr-filter-to-date-att-log').value;
-        if (fromDate) query = query.gte('created_at', fromDate);
-        if (toDate) {
-            let toDateObj = new Date(toDate);
-            toDateObj.setHours(23, 59, 59, 999);
-            query = query.lte('created_at', toDateObj.toISOString());
-        }
-        
-        query = applyHrFiltersToQuery(query, 'att-log');
+        if (filters.status) query = query.eq('status', filters.status);
+        if (filters.dateFrom) query = query.gte('created_at', filters.dateFrom);
+        if (filters.dateTo) query = query.lte('created_at', filters.dateTo);
+        if (filters.project) query = query.ilike('users.project', `%${filters.project}%`);
+        if (filters.location) query = query.ilike('users.location', `%${filters.location}%`);
 
         const { data, error } = await query;
         if (error) throw error;
@@ -4156,9 +3958,10 @@ async function loadHrAttendanceLogPage(filters = {}) {
         }
 
         const isAdmin = currentUser.role === 'مدير النظام';
+        
         const groupedData = data.reduce((acc, record) => {
             if (!record.users) return acc;
-            const key = `${record.users.region || 'غير محدد'} > ${record.users.project ? record.users.project.join(', ') : 'غير محدد'} > ${record.users.location || 'غير محدد'}`;
+            const key = `${record.users.region || 'غير محدد'} > ${record.users.project || 'غير محدد'} > ${record.users.location || 'غير محدد'}`;
             if (!acc[key]) acc[key] = [];
             acc[key].push(record);
             return acc;
@@ -4175,8 +3978,8 @@ async function loadHrAttendanceLogPage(filters = {}) {
                 ${records.map(r => `
                     <tr>
                         <td>${r.users.name}</td>
-                        <td>${formatGregorianDateTime(r.created_at)}</td>
-                        <td>${formatGregorianDateTime(r.checkout_at)}</td>
+                        <td>${r.created_at ? new Date(r.created_at).toLocaleString('ar-SA') : '-'}</td>
+                        <td>${r.checkout_at ? new Date(r.checkout_at).toLocaleString('ar-SA') : '-'}</td>
                         <td><span class="status ${r.status === 'حاضر' ? 'active' : 'inactive'}">${r.status}</span></td>
                         ${isAdmin ? `<td><button class="btn btn-secondary btn-sm admin-edit-attendance-btn" data-id="${r.id}" data-name="${r.users.name}"><i class="ph-bold ph-pencil-simple"></i></button></td>` : ''}
                     </tr>
@@ -4194,19 +3997,21 @@ async function loadHrAttendanceLogPage(filters = {}) {
 }
 
 
-
 // ========= نهاية الاستبدال الكامل للدالة =========
 
 // ========= بداية الاستبدال الكامل لدالة generatePayroll (مع خصم التأخير واستثناء الموظفين) =========
 async function generatePayroll() {
-    await initializeHrFilters('payroll');
     const resultsContainer = document.getElementById('payroll-results-container');
-    const startDateString = document.getElementById('hr-filter-from-date-payroll').value;
-    const endDateString = document.getElementById('hr-filter-to-date-payroll').value;
+    const startDateString = document.getElementById('payroll-start-date').value;
+    const endDateString = document.getElementById('payroll-end-date').value;
+    
+    // --- بداية الإضافة: هنا تم إضافة الأسطر الثلاثة الناقصة ---
+    const regionVal = document.getElementById('payroll-region-filter').value;
+    const projectVal = document.getElementById('payroll-project').value;
+    const locationVal = document.getElementById('payroll-location').value;
+    // --- نهاية الإضافة ---
 
-    if (!startDateString || !endDateString) {
-        return showCustomAlert('خطأ', 'الرجاء تحديد تاريخ البداية والنهاية أولاً.', 'error');
-    }
+    if (!startDateString || !endDateString) return alert('الرجاء تحديد تاريخ البداية والنهاية.');
     
     resultsContainer.innerHTML = '<p style="text-align: center;">جاري جلب البيانات وحساب الرواتب...</p>';
     payrollExportData = [];
@@ -4216,16 +4021,25 @@ async function generatePayroll() {
         const endDate = new Date(endDateString);
         endDate.setHours(23, 59, 59, 999);
 
+
         let query = supabaseClient
             .from('users')
             .select(`*, job_vacancies!users_vacancy_id_fkey(*, contracts!inner(*))`)
             .not('employment_status', 'in', '("تغطية", "مستقيل")');
         
-        // تطبيق الفلاتر المحددة من الواجهة
-        query = applyHrFiltersToQuery(query, 'payroll');
+        if (regionVal) {
+            query = query.eq('region', regionVal);
+        }
+        if (projectVal) {
+            // ملاحظة: بما أن المشروع قد يكون قائمة، نستخدم `cs` (contains)
+            query = query.filter('project', 'cs', `{${projectVal}}`);
+        }
+        if (locationVal) {
+            query = query.ilike('location', `%${locationVal}%`);
+        }
 
         const { data: allEmployees, error: e1 } = await query;
-        if (e1) throw e1;
+            
 
         const [ 
             { data: attendanceRecords, error: e2 }, { data: leaveRecords, error: e3 }, 
@@ -4243,85 +4057,113 @@ async function generatePayroll() {
         if (e1 || e2 || e3 || e4 || e5 || e6 || e7) throw (e1 || e2 || e3 || e4 || e5 || e6 || e7);
 
         if (allEmployees.length === 0) {
-            resultsContainer.innerHTML = '<p style="text-align: center;">لم يتم العثور على موظفين يطابقون معايير البحث.</p>';
+            resultsContainer.innerHTML = '<p style="text-align: center;">لم يتم العثور على موظفين.</p>';
             return;
         }
 
         const holidayDates = new Set(officialHolidays.map(h => new Date(h.holiday_date).toDateString()));
+        const primaryGuards = allEmployees.filter(emp => emp.employment_status === 'اساسي');
 
         for (const emp of allEmployees) {
-            const vacancy = emp.job_vacancies;
-            if (!vacancy || !vacancy.schedule_details?.length) continue;
-            
-            const shift = vacancy.schedule_details[0];
-            const fullMonthSalary = (vacancy.base_salary || 0) + (vacancy.housing_allowance || 0) + (vacancy.transport_allowance || 0) + (vacancy.other_allowances || 0);
-            const dailyRate = fullMonthSalary / 30;
-            const hourlyRate = dailyRate / (shift.work_hours || 8);
-            
-            let scheduledWorkDays = 0, restDays = 0, absentDays = 0, totalLatenessMinutes = 0;
-            const empStartDate = emp.start_of_work_date ? new Date(emp.start_of_work_date) : null;
-            const effectiveStartDate = (empStartDate && empStartDate > startDate) ? empStartDate : startDate;
+            if (emp.employment_status === 'بديل راحة') {
+                // (منطق البديل يبقى كما هو)
+            } else {
+                const vacancy = emp.job_vacancies;
+                if (!vacancy || !vacancy.schedule_details?.length) continue;
+                
+                const shift = vacancy.schedule_details[0];
+                const fullMonthSalary = (vacancy.base_salary || 0) + (vacancy.housing_allowance || 0) + (vacancy.transport_allowance || 0) + (vacancy.other_allowances || 0);
+                const dailyRate = fullMonthSalary / 30;
+                const hourlyRate = dailyRate / (shift.work_hours || 8);
+                
+                let scheduledWorkDays = 0, restDays = 0, absentDays = 0, totalLatenessMinutes = 0;
+                const empStartDate = emp.start_of_work_date ? new Date(emp.start_of_work_date) : null;
+                const effectiveStartDate = (empStartDate && empStartDate > startDate) ? empStartDate : startDate;
 
-            for (let day = new Date(effectiveStartDate); day <= endDate; day.setDate(day.getDate() + 1)) {
-                const dayName = day.toLocaleDateString('en-US', { weekday: 'short' });
-                if ((shift.days || []).includes(dayName)) {
-                    scheduledWorkDays++;
-                    const attendanceRecord = attendanceRecords.find(att => att.guard_id === emp.id && new Date(att.created_at).toDateString() === day.toDateString());
-                    const isOnLeave = leaveRecords.some(leave => { const d = new Date(leave['details->>start_date']); return leave.user_id === emp.id && day >= d && day < new Date(d.setDate(d.getDate() + parseInt(leave['details->>days']))); });
-                    
-                    if (attendanceRecord) {
-                        const shiftStartTime = new Date(day);
-                        const [startHours, startMinutes] = shift.start_time.split(':');
-                        shiftStartTime.setHours(startHours, startMinutes, 0, 0);
-                        const checkinTime = new Date(attendanceRecord.created_at);
-                        if (checkinTime > shiftStartTime) {
-                            const latenessMs = checkinTime - shiftStartTime;
-                            totalLatenessMinutes += Math.round(latenessMs / 60000);
+                for (let day = new Date(effectiveStartDate); day <= endDate; day.setDate(day.getDate() + 1)) {
+                    const dayName = day.toLocaleDateString('en-US', { weekday: 'short' });
+                    if ((shift.days || []).includes(dayName)) {
+                        scheduledWorkDays++;
+                        const attendanceRecord = attendanceRecords.find(att => att.guard_id === emp.id && new Date(att.created_at).toDateString() === day.toDateString());
+                        const isOnLeave = leaveRecords.some(leave => { const d = new Date(leave['details->>start_date']); return leave.user_id === emp.id && day >= d && day < new Date(d.setDate(d.getDate() + parseInt(leave['details->>days']))); });
+                        
+                        if (attendanceRecord) {
+                            const shiftStartTime = new Date(day);
+                            const [startHours, startMinutes] = shift.start_time.split(':');
+                            shiftStartTime.setHours(startHours, startMinutes, 0, 0);
+                            const checkinTime = new Date(attendanceRecord.created_at);
+                            if (checkinTime > shiftStartTime) {
+                                const latenessMs = checkinTime - shiftStartTime;
+                                totalLatenessMinutes += Math.round(latenessMs / 60000);
+                            }
+                        } else if (!isOnLeave && !holidayDates.has(day.toDateString())) {
+                            absentDays++;
                         }
-                    } else if (!isOnLeave && !holidayDates.has(day.toDateString())) {
-                        absentDays++;
-                    }
-                } else { restDays++; }
-            }
-            const actualWorkDays = scheduledWorkDays - absentDays;
-            const totalWorkHours = actualWorkDays * (shift.work_hours || 8);
-            const permissionRecords = permissionRequests.filter(req => req.user_id === emp.id);
-            const withdrawalRecords = attendanceRecords.filter(att => att.guard_id === emp.id && att.status === 'انسحاب');
-            const projectName = Array.isArray(emp.project) ? emp.project.join(', ') : (emp.project || '');
+                    } else { restDays++; }
+                }
 
-            const absenceDeduction = (absentDays * 2) * dailyRate;
-            const latenessDeduction = (totalLatenessMinutes * (hourlyRate / 60));
-            const withdrawalDeductionValue = (dailyRate * withdrawalRecords.length) + (dailyRate * 2 * withdrawalRecords.length);
-            const permissionDeductionValue = dailyRate * permissionRecords.length;
+                // --- بداية التعديلات المطلوبة ---
+                const actualWorkDays = scheduledWorkDays - absentDays;
+                const totalWorkHours = actualWorkDays * (shift.work_hours || 8);
+                const permissionRecords = permissionRequests.filter(req => req.user_id === emp.id);
+                const withdrawalRecords = attendanceRecords.filter(att => att.guard_id === emp.id && att.status === 'انسحاب');
+                const projectName = Array.isArray(emp.project) ? emp.project.join(', ') : (emp.project || '');
 
-            let grossSalary = fullMonthSalary;
-            if (empStartDate && empStartDate > startDate) {
-                const daysInMonth = (endDate - startDate) / (1000 * 60 * 60 * 24) + 1;
-                grossSalary = (fullMonthSalary / daysInMonth) * scheduledWorkDays;
+                const absenceDeduction = (absentDays * 2) * dailyRate;
+                const latenessDeduction = (totalLatenessMinutes * (hourlyRate / 60));
+                const withdrawalDeductionValue = (dailyRate * withdrawalRecords.length) + (dailyRate * 2 * withdrawalRecords.length);
+                const permissionDeductionValue = dailyRate * permissionRecords.length;
+                // --- نهاية التعديلات المطلوبة ---
+
+                let grossSalary = fullMonthSalary;
+                if (empStartDate && empStartDate > startDate) {
+                    const daysInMonth = (endDate - startDate) / (1000 * 60 * 60 * 24) + 1;
+                    grossSalary = (fullMonthSalary / daysInMonth) * scheduledWorkDays;
+                }
+                
+                const employeeOvertimeTotal = overtimeRecords.filter(o => o.employee_id === emp.id).reduce((total, o) => total + (o.overtime_pay || 0), 0);
+                const otherDeductions = penalties.filter(p => p.user_id === emp.id).reduce((total, p) => total + (p.amount || 0), 0);
+                const isFirstMonth = empStartDate && empStartDate >= startDate && empStartDate <= endDate;
+                const uniformDeduction = isFirstMonth ? 150 : 0;
+                const insuranceDeduction = emp.insurance_status === 'مسجل' ? (emp.insurance_deduction_amount || 0) : 0;
+                
+                const totalDeductions = absenceDeduction + latenessDeduction + otherDeductions + uniformDeduction + insuranceDeduction + withdrawalDeductionValue + permissionDeductionValue;
+                const netSalary = (grossSalary + employeeOvertimeTotal) - totalDeductions;
+                
+                payrollExportData.push({
+                    "اسم الموظف": emp.name,
+                    "رقم الهوية": emp.id_number,
+                    "حالة الموظف": emp.employment_status,
+                    "المشروع": projectName,
+                    "ايام العمل": actualWorkDays,
+                    "ساعات العمل": totalWorkHours,
+                    "قيمة الساعة": hourlyRate,
+                    "قيمة اليومية": dailyRate,
+                    "الراتب الاساسي": vacancy.base_salary,
+                    "بدل السكن": vacancy.housing_allowance,
+                    "بدل نقل": vacancy.transport_allowance,
+                    "بدلات اخرى": vacancy.other_allowances,
+                    "اجمالي الراتب": fullMonthSalary,
+                    "راحة": restDays,
+                    "عمل اضافي": employeeOvertimeTotal,
+                    "المستحق": grossSalary + employeeOvertimeTotal,
+                    "استقطاع تأمينات": insuranceDeduction,
+                    "خصم الزي": uniformDeduction,
+                    "خصم تأخير": latenessDeduction,
+                    "استئذان": permissionRecords.length, // عدد أيام الاستئذان
+                    "انسحاب": withdrawalRecords.length, // عدد أيام الانسحاب
+                    "ايام الغياب": absentDays,
+                    "خصم الغياب": absenceDeduction,
+                    "خصومات اخرى": otherDeductions,
+                    "مجموع الاستقطاعات": totalDeductions,
+                    "الصافي": netSalary,
+                    "الايبان": emp.iban,
+                    "البنك": emp.bank_name,
+                });
             }
-            
-            const employeeOvertimeTotal = overtimeRecords.filter(o => o.employee_id === emp.id).reduce((total, o) => total + (o.overtime_pay || 0), 0);
-            const otherDeductions = penalties.filter(p => p.user_id === emp.id).reduce((total, p) => total + (p.amount || 0), 0);
-            const isFirstMonth = empStartDate && empStartDate >= startDate && empStartDate <= endDate;
-            const uniformDeduction = isFirstMonth ? 150 : 0;
-            const insuranceDeduction = emp.insurance_status === 'مسجل' ? (emp.insurance_deduction_amount || 0) : 0;
-            
-            const totalDeductions = absenceDeduction + latenessDeduction + otherDeductions + uniformDeduction + insuranceDeduction + withdrawalDeductionValue + permissionDeductionValue;
-            const netSalary = (grossSalary + employeeOvertimeTotal) - totalDeductions;
-            
-            payrollExportData.push({
-                "اسم الموظف": emp.name, "رقم الهوية": emp.id_number, "حالة الموظف": emp.employment_status,
-                "المشروع": projectName, "ايام العمل": actualWorkDays, "ساعات العمل": totalWorkHours,
-                "قيمة الساعة": hourlyRate, "قيمة اليومية": dailyRate, "الراتب الاساسي": vacancy.base_salary,
-                "بدل السكن": vacancy.housing_allowance, "بدل نقل": vacancy.transport_allowance, "بدلات اخرى": vacancy.other_allowances,
-                "اجمالي الراتب": fullMonthSalary, "راحة": restDays, "عمل اضافي": employeeOvertimeTotal,
-                "المستحق": grossSalary + employeeOvertimeTotal, "استقطاع تأمينات": insuranceDeduction, "خصم الزي": uniformDeduction,
-                "خصم تأخير": latenessDeduction, "استئذان": permissionRecords.length, "انسحاب": withdrawalRecords.length,
-                "ايام الغياب": absentDays, "خصم الغياب": absenceDeduction, "خصومات اخرى": otherDeductions,
-                "مجموع الاستقطاعات": totalDeductions, "الصافي": netSalary, "الايبان": emp.iban, "البنك": emp.bank_name,
-            });
         }
         
+        // (باقي الكود لعرض الجدول في الصفحة لم يتغير)
         const tableHeaders = payrollExportData.length > 0 ? Object.keys(payrollExportData[0]).map(key => `<th>${key}</th>`).join('') : '';
         const nonCurrencyColumns = ['اسم الموظف', 'رقم الهوية', 'حالة الموظف', 'موقع العمل', 'المشروع', 'رقم الجوال', 'ايام العمل', 'ساعات العمل', 'راحة', 'ايام الغياب', 'الايبان', 'البنك', 'المنطقة', 'المدينة', 'حالة التأمينات', 'استئذان', 'انسحاب'];
         
@@ -4329,8 +4171,12 @@ async function generatePayroll() {
             let rowHtml = '<tr>';
             for (const key in row) {
                 let value = row[key];
-                if (typeof value === 'number' && !nonCurrencyColumns.includes(key)) { value = `${value.toFixed(2)} ر.س`; }
-                if (row['حالة الموظف'] === 'بديل راحة' && (key === 'قيمة الساعة' || key === 'قيمة اليومية')) { value = 'متغيرة'; }
+                if (typeof value === 'number' && !nonCurrencyColumns.includes(key)) {
+                    value = `${value.toFixed(2)} ر.س`;
+                }
+                if (row['حالة الموظف'] === 'بديل راحة' && (key === 'قيمة الساعة' || key === 'قيمة اليومية')) {
+                    value = 'متغيرة';
+                }
                 rowHtml += `<td>${value || '-'}</td>`;
             }
             rowHtml += '</tr>';
@@ -4339,18 +4185,13 @@ async function generatePayroll() {
 
         resultsContainer.innerHTML = `<div class="table-header"><h3>مسير رواتب من ${startDateString} إلى ${endDateString}</h3><button id="export-payroll-btn" class="btn btn-success"><i class="ph-bold ph-file-xls"></i> تصدير إلى Excel</button></div><table><thead><tr>${tableHeaders}</tr></thead><tbody>${tableRowsHtml}</tbody></table>`;
 
+        await supabaseClient.from('audit_logs').insert({ user_name: currentUser.name, action_type: 'توليد مسير الرواتب', details: { startDate: startDateString, endDate: endDateString, employeeCount: payrollExportData.length } });
+
     } catch (err) {
         resultsContainer.innerHTML = `<p style="color: red;">حدث خطأ: ${err.message}</p>`;
         console.error("Payroll Error:", err);
     }
 }
-
-
-
-
-
-
-
 // ========= نهاية الاستبدال الكامل لدالة generatePayroll =========
 
 async function exportPayrollToExcel(data, filename) {
@@ -4517,11 +4358,11 @@ async function loadPaymentArchive() {
     const tableHeaders = "<th>تاريخ التحويل</th><th>اسم المستلم</th><th>المبلغ</th><th>الآيبان</th><th>تاريخ الوردية</th><th>تم التحويل بواسطة</th>";
     const tableRows = archive.map(a => `
         <tr>
-            <td>${formatGregorianDateTime(a.paid_at)}</td>
+            <td>${new Date(a.paid_at).toLocaleString('ar-SA')}</td>
             <td>${a.covering_guard_name}</td>
             <td>${a.payment_amount} ر.س</td>
             <td>${a.applicant_iban}</td>
-            <td>${formatGregorianDate(a.shift_date)}</td>
+            <td>${new Date(a.shift_date).toLocaleDateString('ar-SA')}</td>
             <td>${a.users.name}</td>
         </tr>
     `).join('');
@@ -4681,7 +4522,7 @@ async function loadHolidaysPage() {
         <div class="attendance-card" style="padding: 15px; margin-bottom: 10px;">
             <div>
                 <span>${holiday.description}</span>
-                <p class="time">${formatGregorianDate(holiday.holiday_date)}</p>
+                <p class="time">${new Date(holiday.holiday_date).toLocaleDateString('ar-SA')}</p>
             </div>
             <button class="btn-action delete-holiday-btn" data-id="${holiday.id}" title="حذف العطلة">
                 <i class="ph-bold ph-trash"></i>
@@ -4750,7 +4591,7 @@ async function loadHiringPage() {
                 <tr>
                     <td>${req.details.name}</td>
                     <td>${req.details.project}</td>
-                    <td>${formatGregorianDate(req.created_at)}</td>
+                    <td>${new Date(req.created_at).toLocaleDateString('ar-SA')}</td>
                     <td><span class="status ${req.status === 'مقبول' ? 'active' : (req.status === 'مرفوض' ? 'inactive' : 'pending')}">${req.status}</span></td>
                 </tr>
             `).join('')}
@@ -4888,94 +4729,7 @@ async function fetchStatistics() {
 
 document.addEventListener('DOMContentLoaded', function() {
 
-// ==========================================================
-// ===     بداية منطق التفاعل المترابط للفلاتر (مع التحديث المباشر)     ===
-// ==========================================================
-document.body.addEventListener('change', (event) => {
-    if (!event.target.classList.contains('hr-filter') || !hrFilterData) return;
 
-    const changedElement = event.target;
-    const pagePrefix = changedElement.id.split('-').pop();
-
-    const regionSelect = document.getElementById(`hr-filter-region-${pagePrefix}`);
-    const citySelect = document.getElementById(`hr-filter-city-${pagePrefix}`);
-    const projectSelect = document.getElementById(`hr-filter-project-${pagePrefix}`);
-    const locationSelect = document.getElementById(`hr-filter-location-${pagePrefix}`);
-    
-    const selectedRegion = regionSelect.value;
-    const selectedCity = citySelect.value;
-    const selectedProject = projectSelect.value;
-
-    if (changedElement.id === `hr-filter-region-${pagePrefix}`) {
-        citySelect.innerHTML = '<option value="">كل المدن</option>';
-        projectSelect.innerHTML = '<option value="">كل المشاريع</option>';
-        locationSelect.innerHTML = '<option value="">كل المواقع</option>';
-        if (selectedRegion && hrFilterData[selectedRegion]) {
-            Object.keys(hrFilterData[selectedRegion]).sort().forEach(city => {
-                citySelect.innerHTML += `<option value="${city}">${city}</option>`;
-            });
-        }
-    }
-
-    if (changedElement.id === `hr-filter-city-${pagePrefix}`) {
-        projectSelect.innerHTML = '<option value="">كل المشاريع</option>';
-        locationSelect.innerHTML = '<option value="">كل المواقع</option>';
-        if (selectedRegion && selectedCity && hrFilterData[selectedRegion]?.[selectedCity]) {
-            Object.keys(hrFilterData[selectedRegion][selectedCity]).sort().forEach(project => {
-                projectSelect.innerHTML += `<option value="${project}">${project}</option>`;
-            });
-        }
-    }
-
-    if (changedElement.id === `hr-filter-project-${pagePrefix}`) {
-        locationSelect.innerHTML = '<option value="">كل المواقع</option>';
-        if (selectedRegion && selectedCity && selectedProject && hrFilterData[selectedRegion]?.[selectedCity]?.[selectedProject]) {
-            hrFilterData[selectedRegion][selectedCity][selectedProject].sort().forEach(location => {
-                locationSelect.innerHTML += `<option value="${location}">${location}</option>`;
-            });
-        }
-    }
-
-    // --- بداية الإضافة: تشغيل دالة تحديث البيانات بعد أي تغيير ---
-    triggerDataLoadForPage(pagePrefix);
-    // --- نهاية الإضافة ---
-});
-
-function triggerDataLoadForPage(pagePrefix) {
-    switch (pagePrefix) {
-        case 'employees':
-            loadEmployeeTabData();
-            break;
-        case 'payroll':
-            // مسير الرواتب لا يتحدث تلقائياً، بل عند ضغط الزر
-            break;
-        case 'att-log':
-            loadHrAttendanceLogPage();
-            break;
-        case 'penalties':
-            loadPenaltiesPage();
-            break;
-        case 'att-manage':
-            loadAttendanceManagementPage();
-            break;
-    }
-}
-// ==========================================================
-// ===      نهاية منطق التفاعل المترابط للفلاتر      ===
-// ==========================================================
-// ==========================================================
-// ===     بداية منطق الفلترة المباشرة لحقل البحث     ===
-// ==========================================================
-document.body.addEventListener('keyup', (event) => {
-    // التحقق إذا كان المستخدم يكتب في أحد حقول البحث الخاصة بالموارد البشرية
-    if (event.target.classList.contains('hr-filter') && event.target.type === 'text') {
-        const pagePrefix = event.target.id.split('-').pop();
-        triggerDataLoadForPage(pagePrefix);
-    }
-});
-// ==========================================================
-// ===      نهاية منطق الفلترة المباشرة لحقل البحث      ===
-// ==========================================================
 // --- منطق صفحة استيراد العقود ---
 // --- منطق صفحة استيراد العقود ---
 const importContractsBtn = document.getElementById('import-contracts-btn');
@@ -5221,7 +4975,7 @@ navLinks.forEach(link => {
         if (targetPage) {
             targetPage.classList.remove('hidden');
         }
-        
+
         // استدعاء الدوال الخاصة بكل صفحة (هذا الجزء يبقى كما هو)
         if (targetPageId === 'page-clients') fetchClients();
         if (targetPageId === 'page-users') fetchUsers();
@@ -5236,16 +4990,10 @@ navLinks.forEach(link => {
         if (targetPageId === 'page-patrol') loadSupervisorPatrolPage();
         if (targetPageId === 'page-contracts') fetchContracts();
         if (targetPageId === 'page-vacancies') loadVacancyTabData();
-        if (targetPageId === 'page-employees') {
-    await initializeHrFilters('employees');
-    loadEmployeeTabData();
-}
+        if (targetPageId === 'page-employees') loadEmployeeTabData();
         if (targetPageId === 'page-requests-review') loadRequestsReviewPage();
         if (targetPageId === 'page-hiring') loadHiringPage();
-        if (targetPageId === 'page-penalties') {
-    await initializeHrFilters('penalties');
-    loadPenaltiesPage();
-}
+        if (targetPageId === 'page-penalties') loadPenaltiesPage();
         if (targetPageId === 'page-coverage-requests') loadCoverageRequestsPage();
         if (targetPageId === 'page-directives-ops') loadOpsDirectivesPage();
         if (targetPageId === 'page-my-directives') loadMyDirectivesPage();
@@ -5269,18 +5017,10 @@ navLinks.forEach(link => {
         if (targetPageId === 'page-requests-archive') loadArchivePage('leave');
         if (targetPageId === 'page-resignation-requests') loadResignationRequests();
         if (targetPageId === 'page-loan-requests') loadLoanRequests();
-        if (targetPageId === 'page-hr-attendance-log') {
-    await initializeHrFilters('att-log');
-    loadHrAttendanceLogPage();
-}
-if (targetPageId === 'page-attendance-management') {
-    await initializeHrFilters('att-manage');
-    loadAttendanceManagementPage();
-}
+        if (targetPageId === 'page-hr-attendance-log') loadHrAttendanceLogPage();
         if (targetPageId === 'page-payroll') {
-    await initializeHrFilters('payroll');
-    document.getElementById('payroll-results-container').innerHTML = '<p style="text-align: center;">الرجاء تحديد الفلاتر والضغط على "توليد المسير" لعرض البيانات.</p>';
-}
+            document.getElementById('payroll-results-container').innerHTML = '<p style="text-align: center;">الرجاء اختيار الشهر والضغط على "توليد المسير" لعرض البيانات.</p>';
+        }
         if (targetPageId === 'page-hr-data-entry') {
             document.getElementById('import-results-container').innerHTML = '';
         }
@@ -5623,117 +5363,6 @@ if (event.target.id === 'coverage-link-vacancy') {
     // --- 3. Listener for All Body Clicks (Modals & Actions) ---
 // --- 3. Master Click Handler for the entire application ---
 document.body.addEventListener('click', async function(event) {
-
-
-  // ==========================================================
-// ===   بداية منطق التفاعل مع صفحة إدارة الحضور   ===
-// ==========================================================
-
-// --- زر البحث في صفحة إدارة الحضور ---
-if (event.target.id === 'att-manage-search-btn') {
-    const filters = {
-        searchTerm: document.getElementById('att-manage-search-input').value,
-        dateFrom: document.getElementById('att-manage-from-date').value,
-        dateTo: document.getElementById('att-manage-to-date').value
-    };
-    loadAttendanceManagementPage(filters);
-}
-
-// --- فتح نافذة تعديل الحضور ---
-const adminEditAttendanceBtn = event.target.closest('.admin-edit-attendance-btn');
-if (adminEditAttendanceBtn) {
-    const recordId = adminEditAttendanceBtn.dataset.id;
-    const guardName = adminEditAttendanceBtn.dataset.name;
-    const modal = document.getElementById('admin-edit-attendance-modal');
-
-    document.getElementById('edit-attendance-title').textContent = `تعديل سجل: ${guardName}`;
-    
-    // إعادة تعيين الحقول
-    modal.querySelector('form')?.reset(); // يفترض وجود فورم حول الحقول
-    document.getElementById('edit-attendance-id').value = recordId;
-    
-    // دالة مساعدة لتحويل التوقيت
-    const toLocalISOString = (date) => {
-        if (!date) return '';
-        const d = new Date(date);
-        d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
-        return d.toISOString().slice(0, 16);
-    };
-
-    // جلب بيانات السجل المحدد
-    const { data: record } = await supabaseClient.from('attendance').select('*').eq('id', recordId).single();
-    if (record) {
-        document.getElementById('edit-attendance-status').value = record.status;
-        document.getElementById('edit-checkin-time').value = toLocalISOString(record.created_at);
-        document.getElementById('edit-checkout-time').value = toLocalISOString(record.checkout_at);
-        modal.classList.remove('hidden');
-    } else {
-        alert('لا يمكن العثور على السجل.');
-    }
-}
-
-// --- حفظ التعديلات من نافذة تعديل الحضور ---
-const saveAttendanceChangesBtn = event.target.closest('#save-attendance-changes-btn');
-if (saveAttendanceChangesBtn) {
-    const recordId = document.getElementById('edit-attendance-id').value;
-    
-    const updateData = {
-        status: document.getElementById('edit-attendance-status').value,
-        created_at: document.getElementById('edit-checkin-time').value ? new Date(document.getElementById('edit-checkin-time').value).toISOString() : null,
-        checkout_at: document.getElementById('edit-checkout-time').value ? new Date(document.getElementById('edit-checkout-time').value).toISOString() : null
-    };
-
-    saveAttendanceChangesBtn.disabled = true;
-
-    const { error } = await supabaseClient.from('attendance').update(updateData).eq('id', recordId);
-    
-    if (error) {
-        showCustomAlert('خطأ', 'فشل تحديث السجل.', 'error');
-        console.error("Attendance edit error:", error);
-    } else {
-        showCustomAlert('نجاح', 'تم تحديث السجل بنجاح.', 'success');
-        document.getElementById('admin-edit-attendance-modal').classList.add('hidden');
-        await supabaseClient.from('audit_logs').insert({
-            user_name: currentUser.name, action_type: 'تعديل سجل حضور يدوي',
-            details: { modified_record_id: recordId, new_status: updateData.status }
-        });
-        loadAttendanceManagementPage(); // إعادة تحميل بيانات الصفحة
-    }
-    saveAttendanceChangesBtn.disabled = false;
-}
-// ==========================================================
-// ===    نهاية منطق التفاعل مع صفحة إدارة الحضور    ===
-// ==========================================================
-    
-
-
-const permissionCheckbox = event.target.closest('.edit-attendance-permission-checkbox');
-    if (permissionCheckbox) {
-        // لا نستخدم preventDefault هنا لأننا نريد السلوك الافتراضي للمربع
-        const userId = permissionCheckbox.dataset.userId;
-        const canEdit = permissionCheckbox.checked; // true or false
-
-        const { error } = await supabaseClient
-            .from('users')
-            .update({ can_edit_attendance: canEdit })
-            .eq('id', userId);
-
-        if (error) {
-            showToast('حدث خطأ أثناء تحديث الصلاحية.', 'error');
-            // في حالة الخطأ، نعكس التغيير في الواجهة
-            permissionCheckbox.checked = !canEdit;
-        } else {
-            showToast('تم تحديث الصلاحية بنجاح.', 'success');
-            await supabaseClient.from('audit_logs').insert({ 
-                user_name: currentUser.name, 
-                action_type: 'تحديث صلاحية', 
-                details: { target_user_id: userId, permission: 'can_edit_attendance', new_value: canEdit } 
-            });
-        }
-    }
-
-
-
 
 // ==========================================================
 // ===        بداية منطق أزرار صفحة إدارة الإعلانات        ===
@@ -6693,7 +6322,7 @@ if (event.target.closest('.view-contract-btn')) {
         <div class="contract-display">
             <h3>المعلومات الأساسية</h3>
             <p><strong>اسم المشروع:</strong> ${contract.company_name || 'غير محدد'}</p>
-            <p><strong>تاريخ نهاية العقد:</strong> ${formatGregorianDate(contract.end_date)}</p>
+            <p><strong>تاريخ نهاية العقد:</strong> ${contract.end_date ? new Date(contract.end_date).toLocaleDateString('ar-SA') : 'غير محدد'}</p>
             <p><strong>المنطقة:</strong> ${contract.region || 'غير محدد'}</p>
             <p><strong>المدينة:</strong> ${(contract.city || []).join('، ') || 'غير محدد'}</p>
             <hr>
@@ -10409,7 +10038,7 @@ async function loadMyRequestsPage() {
                     <span class="status-badge ${statusClass}">${statusText}</span>
                 </div>
                 <div class="request-card-body">
-                    <p><strong>تاريخ الطلب:</strong> ${formatGregorianDate(request.created_at)}</p>
+                    <p><strong>تاريخ الطلب:</strong> ${new Date(request.created_at).toLocaleDateString('ar-SA')}</p>
                     ${request.details && request.details.reason ? `<p><strong>السبب:</strong> ${request.details.reason}</p>` : ''}
                     ${request.details && request.details.days ? `<p><strong>عدد الأيام:</strong> ${request.details.days}</p>` : ''}
                     ${request.details && request.details.amount ? `<p><strong>المبلغ:</strong> ${request.details.amount} ر.س</p>` : ''}
