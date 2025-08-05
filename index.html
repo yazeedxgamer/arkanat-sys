@@ -77,7 +77,6 @@
         <li data-role="ادارة الموارد البشرية"><a href="#" data-page="page-resignation-requests"><i class="ph-fill ph-file-x"></i><span>طلبات الاستقالات</span></a></li>
         <li data-role="ادارة الموارد البشرية"><a href="#" data-page="page-loan-requests"><i class="ph-fill ph-hand-coins"></i><span>طلبات السلف</span></a></li>
         <li data-role="ادارة الموارد البشرية"><a href="#" data-page="page-hr-attendance-log"><i class="ph-fill ph-user-list-checks"></i><span>سجل الحضور</span></a></li>
-        <li data-role="مدير النظام,ادارة الموارد البشرية"><a href="#" data-page="page-attendance-management"><i class="ph-fill ph-user-list-checks"></i><span>إدارة الحضور</span></a></li>
         <li data-role="ادارة الموارد البشرية"><a href="#" data-page="page-requests-archive"><i class="ph-fill ph-archive"></i><span>أرشيف الطلبات</span></a></li>
         <li data-role="حارس أمن"><a href="#statistics" data-page="page-attendance"><i class="ph-fill ph-timer"></i><span>الحضور و الانصراف</span></a></li>
         <li data-role="حارس أمن"><a href="#statistics" data-page="page-my-requests"><i class="ph-fill ph-files"></i><span>طلباتي</span></a></li>
@@ -171,36 +170,10 @@
         <h3>العقوبات والخصومات</h3>
     </div>
     <div class="table-container">
-        <div class="report-filters-card" style="margin-bottom: 20px;">
-            <div class="filter-grid" style="grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));">
-                <div class="filter-group">
-                    <label>المنطقة</label>
-                    <select class="hr-filter" id="hr-filter-region-penalties">
-                        <option value="">الكل</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label>المدينة</label>
-                    <select class="hr-filter" id="hr-filter-city-penalties">
-                        <option value="">الكل</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label>المشروع</label>
-                    <select class="hr-filter" id="hr-filter-project-penalties">
-                        <option value="">الكل</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label>الموقع</label>
-                    <select class="hr-filter" id="hr-filter-location-penalties">
-                        <option value="">الكل</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label>بحث بالاسم / الهوية</label>
-                    <input type="text" class="hr-filter" id="hr-filter-search-penalties" placeholder="ابحث...">
-                </div>
+        <div class="filter-grid" style="grid-template-columns: 1fr; padding: 20px; background-color: #f8f9fa; border-radius: 8px; margin-bottom:20px;">
+            <div class="form-group">
+                <label>بحث باسم الموظف</label>
+                <input type="text" id="penalty-employee-search" placeholder="ابحث هنا...">
             </div>
         </div>
         <div id="penalties-employee-list">
@@ -208,58 +181,6 @@
         </div>
     </div>
 </div>
-<div id="page-attendance-management" class="page-content hidden">
-    <div class="page-header">
-        <h3>إدارة سجلات الحضور</h3>
-    </div>
-    
-    <div class="report-filters-card" style="margin-bottom: 20px;">
-        <div class="filter-grid" style="grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));">
-            <div class="filter-group">
-                <label>المنطقة</label>
-                <select class="hr-filter" id="hr-filter-region-att-manage">
-                    <option value="">الكل</option>
-                </select>
-            </div>
-            <div class="filter-group">
-                <label>المدينة</label>
-                <select class="hr-filter" id="hr-filter-city-att-manage">
-                    <option value="">الكل</option>
-                </select>
-            </div>
-            <div class="filter-group">
-                <label>المشروع</label>
-                <select class="hr-filter" id="hr-filter-project-att-manage">
-                    <option value="">الكل</option>
-                </select>
-            </div>
-            <div class="filter-group">
-                <label>الموقع</label>
-                <select class="hr-filter" id="hr-filter-location-att-manage">
-                    <option value="">الكل</option>
-                </select>
-            </div>
-            <div class="filter-group">
-                <label>بحث بالاسم / الهوية</label>
-                <input type="text" class="hr-filter" id="hr-filter-search-att-manage" placeholder="ابحث...">
-            </div>
-            <div class="filter-group">
-                <label>من تاريخ</label>
-                <input type="date" class="hr-filter" id="hr-filter-from-date-att-manage">
-            </div>
-            <div class="filter-group">
-                <label>إلى تاريخ</label>
-                <input type="date" class="hr-filter" id="hr-filter-to-date-att-manage">
-            </div>
-            <div class="filter-group" style="align-items: flex-end;">
-                 <button id="att-manage-search-btn" class="btn btn-primary" style="width: 100%;">بحث</button>
-            </div>
-        </div>
-    </div>
-    <div id="attendance-management-results" class="table-container">
-        </div>
-</div>
-
 
 <div id="page-announcements" class="page-content hidden">
     <div class="page-header">
@@ -605,38 +526,22 @@
             <h3>قائمة الموظفين</h3>
              <button id="add-employee-btn" class="btn btn-primary"><i class="ph-bold ph-plus"></i> إضافة موظف جديد</button>
         </div>
-        
-        <div class="report-filters-card" style="margin-bottom: 20px;">
-            <div class="filter-grid" style="grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));">
-                <div class="filter-group">
-                    <label>المنطقة</label>
-                    <select class="hr-filter" id="hr-filter-region-employees">
-                        <option value="">الكل</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label>المدينة</label>
-                    <select class="hr-filter" id="hr-filter-city-employees">
-                        <option value="">الكل</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label>المشروع</label>
-                    <select class="hr-filter" id="hr-filter-project-employees">
-                        <option value="">الكل</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label>الموقع</label>
-                    <select class="hr-filter" id="hr-filter-location-employees">
-                        <option value="">الكل</option>
-                    </select>
-                </div>
-                <div class="filter-group">
-                    <label>بحث بالاسم / الهوية</label>
-                    <input type="text" class="hr-filter" id="hr-filter-search-employees" placeholder="ابحث...">
-                </div>
+        <div class="filter-grid" style="padding: 20px; background-color: #f8f9fa; border-radius: 8px; margin-bottom:20px; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));">
+            <div class="form-group"><label>بحث بالاسم أو الهوية</label><input type="text" id="employee-search-input" placeholder="ابحث..."></div>
+            <div class="form-group"><label>فلترة حسب الدور</label><select id="employee-role-filter"><option value="">الكل</option><option value="حارس أمن">حارس أمن</option><option value="مشرف">مشرف</option><option value="ادارة العمليات">ادارة العمليات</option><option value="ادارة الموارد البشرية">ادارة الموارد البشرية</option><option value="ادارة العقود">ادارة العقود</option></select></div>
+            <div class="form-group">
+                <label>فلترة حسب المنطقة</label>
+                <select id="employee-region-filter">
+                    <option value="">الكل</option>
+                    <option value="الوسطى">الوسطى</option>
+                    <option value="الشمالية">الشمالية</option>
+                    <option value="الغربية">الغربية</option>
+                    <option value="الجنوبية">الجنوبية</option>
+                    <option value="الشرقية">الشرقية</option>
+                </select>
             </div>
+            <div class="form-group"><label>فلترة حسب المشروع</label><input type="text" id="employee-project-filter" placeholder="اسم المشروع..."></div>
+            <div class="form-group"><label>فلترة حسب الموقع</label><input type="text" id="employee-location-filter" placeholder="اسم الموقع..."></div>
         </div>
         <div id="employees-list-container">
              <p style="text-align: center;">جاري تحميل الموظفين...</p>
@@ -684,44 +589,23 @@
     <div class="page-header">
         <h3>سجل حضور وانصراف الحراس</h3>
     </div>
-
     <div class="report-filters-card" style="margin-bottom: 20px;">
         <div class="filter-grid" style="grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));">
-            <div class="filter-group">
-                <label>المنطقة</label>
-                <select class="hr-filter" id="hr-filter-region-att-log">
-                    <option value="">الكل</option>
-                </select>
+            <div class="form-group">
+                <label>من تاريخ</label><input type="date" id="hr-attendance-from">
             </div>
-            <div class="filter-group">
-                <label>المدينة</label>
-                <select class="hr-filter" id="hr-filter-city-att-log">
-                    <option value="">الكل</option>
-                </select>
+            <div class="form-group">
+                <label>إلى تاريخ</label><input type="date" id="hr-attendance-to">
             </div>
-            <div class="filter-group">
-                <label>المشروع</label>
-                <select class="hr-filter" id="hr-filter-project-att-log">
-                    <option value="">الكل</option>
-                </select>
+             <div class="form-group">
+                <label>الحالة</label>
+                <select id="hr-attendance-status"><option value="">الكل</option><option value="حاضر">حاضر</option></select>
             </div>
-            <div class="filter-group">
-                <label>الموقع</label>
-                <select class="hr-filter" id="hr-filter-location-att-log">
-                    <option value="">الكل</option>
-                </select>
+            <div class="form-group">
+                <label>المشروع</label><input type="text" id="hr-attendance-project" placeholder="بحث بالمشروع...">
             </div>
-            <div class="filter-group">
-                <label>بحث بالاسم / الهوية</label>
-                <input type="text" class="hr-filter" id="hr-filter-search-att-log" placeholder="ابحث...">
-            </div>
-            <div class="filter-group">
-                <label>من تاريخ</label>
-                <input type="date" class="hr-filter" id="hr-filter-from-date-att-log">
-            </div>
-            <div class="filter-group">
-                <label>إلى تاريخ</label>
-                <input type="date" class="hr-filter" id="hr-filter-to-date-att-log">
+            <div class="form-group">
+                <label>الموقع</label><input type="text" id="hr-attendance-location" placeholder="بحث بالموقع...">
             </div>
             <div class="filter-group" style="align-items: flex-end;">
                  <button id="hr-attendance-search-btn" class="btn btn-primary" style="width: 100%;">بحث</button>
@@ -736,83 +620,45 @@
     <div class="page-header">
         <h3>مسير الرواتب</h3>
     </div>
-
     <div class="report-filters-card" style="margin-bottom: 20px;">
-        <div class="filter-grid" style="grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));">
-            <div class="filter-group">
-                <label>المنطقة</label>
-                <select class="hr-filter" id="hr-filter-region-payroll">
-                    <option value="">الكل</option>
-                </select>
+                <div class="filter-grid" style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));">
+                    <div class="filter-group">
+                        <label for="payroll-start-date">من تاريخ</label>
+                        <input type="date" id="payroll-start-date">
+                    </div>
+                    <div class="filter-group">
+                        <label for="payroll-end-date">إلى تاريخ</label>
+                        <input type="date" id="payroll-end-date">
+                    </div>
+                    <div class="filter-group">
+                        <label for="payroll-region-filter">فلترة حسب المنطقة</label>
+                        <select id="payroll-region-filter">
+                            <option value="">الكل</option>
+                            <option value="الوسطى">الوسطى</option>
+                            <option value="الشمالية">الشمالية</option>
+                            <option value="الغربية">الغربية</option>
+                            <option value="الجنوبية">الجنوبية</option>
+                            <option value="الشرقية">الشرقية</option>
+                        </select>
+                    </div>
+                    <div class="filter-group">
+                        <label for="payroll-project">فلترة حسب المشروع</label>
+                        <input type="text" id="payroll-project" placeholder="اتركه فارغاً للكل">
+                    </div>
+                    <div class="filter-group">
+                        <label for="payroll-location">فلترة حسب الموقع</label>
+                        <input type="text" id="payroll-location" placeholder="اتركه فارغاً للكل">
+                    </div>
+                    <div class="filter-group" style="align-items: flex-end;">
+                        <button id="generate-payroll-btn" class="btn btn-primary" style="width: 100%;">
+                            <i class="ph-bold ph-calculator"></i> توليد المسير
+                        </button>
+                    </div>
+                </div>
             </div>
-            <div class="filter-group">
-                <label>المدينة</label>
-                <select class="hr-filter" id="hr-filter-city-payroll">
-                    <option value="">الكل</option>
-                </select>
-            </div>
-            <div class="filter-group">
-                <label>المشروع</label>
-                <select class="hr-filter" id="hr-filter-project-payroll">
-                    <option value="">الكل</option>
-                </select>
-            </div>
-            <div class="filter-group">
-                <label>الموقع</label>
-                <select class="hr-filter" id="hr-filter-location-payroll">
-                    <option value="">الكل</option>
-                </select>
-            </div>
-            <div class="filter-group">
-                <label>بحث بالاسم / الهوية</label>
-                <input type="text" class="hr-filter" id="hr-filter-search-payroll" placeholder="ابحث...">
-            </div>
-            <div class="filter-group">
-                <label>من تاريخ</label>
-                <input type="date" class="hr-filter" id="hr-filter-from-date-payroll">
-            </div>
-            <div class="filter-group">
-                <label>إلى تاريخ</label>
-                <input type="date" class="hr-filter" id="hr-filter-to-date-payroll">
-            </div>
-            <div class="filter-group" style="align-items: flex-end;">
-                <button id="generate-payroll-btn" class="btn btn-primary" style="width: 100%;">
-                    <i class="ph-bold ph-calculator"></i> توليد المسير
-                </button>
-            </div>
-        </div>
-    </div>
     <div id="payroll-results-container" class="table-container">
         <p style="text-align: center;">الرجاء اختيار الشهر والضغط على "توليد المسير" لعرض البيانات.</p>
     </div>
-</div>
-<div id="page-hr-ops-hiring" class="page-content hidden">
-    <div class="page-header">
-        <h3>مراجعة التوظيفات المعتمدة من العمليات</h3>
-    </div>
-    <div class="tabs">
-        <a href="#" class="tab-link active" data-tab="hr-new-reviews">
-            <i class="ph-bold ph-bell-simple-ringing"></i> مراجعات جديدة
-        </a>
-        <a href="#" class="tab-link" data-tab="hr-archive-reviews">
-            <i class="ph-bold ph-archive"></i> الأرشيف
-        </a>
-    </div>
-
-    <div id="hr-new-reviews" class="tab-content active">
-        <div id="hr-ops-hiring-new-container" class="all-requests-container" style="padding-top:20px;">
-            <p style="text-align: center;">جاري تحميل المراجعات الجديدة...</p>
-        </div>
-    </div>
-    <div id="hr-archive-reviews" class="tab-content">
-        <div id="hr-ops-hiring-archive-container" class="all-requests-container" style="padding-top:20px;">
-            <p style="text-align: center;">جاري تحميل الأرشيف...</p>
-        </div>
-    </div>
-</div>
-    <div id="hr-ops-hiring-container">
-        </div>
-</div>
 </div>
 <div id="page-hiring" class="page-content hidden">
     <div class="page-header">
@@ -1001,7 +847,33 @@
     <div id="ops-nominees-container">
         </div>
 </div>
+<div id="page-hr-ops-hiring" class="page-content hidden">
+    <div class="page-header">
+        <h3>مراجعة التوظيفات المعتمدة من العمليات</h3>
+    </div>
+    <div class="tabs">
+        <a href="#" class="tab-link active" data-tab="hr-new-reviews">
+            <i class="ph-bold ph-bell-simple-ringing"></i> مراجعات جديدة
+        </a>
+        <a href="#" class="tab-link" data-tab="hr-archive-reviews">
+            <i class="ph-bold ph-archive"></i> الأرشيف
+        </a>
+    </div>
 
+    <div id="hr-new-reviews" class="tab-content active">
+        <div id="hr-ops-hiring-new-container" class="all-requests-container" style="padding-top:20px;">
+            <p style="text-align: center;">جاري تحميل المراجعات الجديدة...</p>
+        </div>
+    </div>
+    <div id="hr-archive-reviews" class="tab-content">
+        <div id="hr-ops-hiring-archive-container" class="all-requests-container" style="padding-top:20px;">
+            <p style="text-align: center;">جاري تحميل الأرشيف...</p>
+        </div>
+    </div>
+</div>
+    <div id="hr-ops-hiring-container">
+        </div>
+</div>
 
 
 
@@ -1842,41 +1714,6 @@
                 <select id="edit-attendance-status">
                     <option value="حاضر">حاضر</option>
                     <option value="اكمل المناوبة">أكمل المناوبة</option>
-                    <option value="انسحاب">انسحاب</option>
-                    <option value="غياب">غياب</option>
-                    <option value="استئذان">استئذان</option>
-                </select>
-            </div>
-            <div class="form-grid">
-                <div class="form-group">
-                    <label for="edit-checkin-time">وقت الحضور</label>
-                    <input type="datetime-local" id="edit-checkin-time">
-                </div>
-                <div class="form-group">
-                    <label for="edit-checkout-time">وقت الانصراف</label>
-                    <input type="datetime-local" id="edit-checkout-time">
-                </div>
-            </div>
-        </div>
-        <div class="modal-footer">
-            <button id="save-attendance-changes-btn" class="btn btn-primary">حفظ التعديلات</button>
-            <button class="btn btn-secondary modal-close-btn">إلغاء</button>
-        </div>
-    </div>
-</div>
-<div id="admin-edit-attendance-modal" class="modal-overlay hidden">
-    <div class="modal-panel">
-        <div class="modal-header">
-            <h4 id="edit-attendance-title">تعديل سجل الحضور</h4>
-            <button class="modal-close-btn"><i class="ph-bold ph-x"></i></button>
-        </div>
-        <div class="modal-body">
-            <input type="hidden" id="edit-attendance-id">
-            <div class="form-group">
-                <label for="edit-attendance-status">تغيير الحالة إلى</label>
-                <select id="edit-attendance-status">
-                    <option value="حاضر">حاضر</option>
-                    <option value="اكمل المناوبة">اكمل المناوبة</option>
                     <option value="انسحاب">انسحاب</option>
                     <option value="غياب">غياب</option>
                     <option value="استئذان">استئذان</option>
