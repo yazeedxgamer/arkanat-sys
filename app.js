@@ -1210,11 +1210,11 @@ async function loadGuardAttendancePage() {
                  if (latestAttendance && latestAttendance.status !== 'اكمل المناوبة') {
                     const checkInTime = new Date(latestAttendance.created_at).toLocaleTimeString('ar-SA', { timeStyle: 'short' });
                     if (latestAttendance.status === 'حاضر') {
-                        status = { text: `حاضر (منذ ${checkInTime})`, class: 'present' };
-                        actionButton = `<button class="btn btn-secondary btn-sm view-on-map-btn" data-guard-id="${guard.id}" title="عرض في الخريطة"><i class="ph-bold ph-map-pin-line"></i></button>`;
-                    } else if (latestAttendance.status === 'انسحاب') {
-                        status = { text: `منسحب (منذ ${checkInTime})`, class: 'absent' };
-                        if (currentUser.role === 'ادارة العمليات' || currentUser.role === 'مشرف') {
+                    status = { text: `حاضر (منذ ${checkInTime})`, class: 'present' };
+                    actionButton = `<button class="btn btn-secondary btn-sm view-on-map-btn" data-guard-id="${guard.id}" title="عرض في الخريطة"><i class="ph-bold ph-map-pin-line"></i></button>`;
+                } else if (latestAttendance.status.includes('انسحاب')) { // <-- هنا التعديل
+                    status = { text: `${latestAttendance.status} (منذ ${checkInTime})`, class: 'absent' };
+                    if (currentUser.role === 'ادارة العمليات' || currentUser.role === 'مشرف') {
                             const shiftData = { project: guard.project, location: guard.location, region: guard.region, city: guard.city, ...shift };
                             actionButton = `<button class="btn btn-secondary btn-sm add-to-coverage-btn" data-shift='${JSON.stringify(shiftData)}'><i class="ph-bold ph-plus"></i> للتغطية</button>`;
                         }
@@ -10254,35 +10254,67 @@ if (confirmEndPatrolBtn) {
 // ==================== بداية الاستبدال ====================
 // عند الضغط على زر "تسجيل انصراف"
 if (checkOutBtn) {
-    if (confirm('هل أنت متأكد من أنك تريد تسجيل الانصراف الآن؟')) {
+    // تعطيل الزر مؤقتاً لمنع النقرات المزدوجة أثناء جلب البيانات
+    checkOutBtn.disabled = true;
+    checkOutBtn.innerHTML = '<i class="ph-fill ph-spinner-gap animate-spin"></i> التحقق...';
 
-        // تعطيل الزر لمنع الضغطات المتكررة وعرض مؤشر التحميل
-        checkOutBtn.disabled = true;
-        checkOutBtn.innerHTML = '<i class="ph-fill ph-spinner-gap animate-spin"></i> جاري ...';
-
-        // أولاً: إيقاف التتبع المباشر
-        stopPersistentTracking(); 
-
-        // ثانياً: محاولة تحديث قاعدة البيانات
-        const { error } = await supabaseClient
-            .from('attendance')
-            .update({
-                checkout_at: new Date(),
-                status: 'اكمل المناوبة'
-            })
-            .eq('id', checkOutBtn.dataset.attendanceId);
-
-        // ثالثاً: إبلاغ المستخدم بالنتيجة الحقيقية
-        if (error) {
-            alert('فشل تسجيل الانصراف. سيتم تحديث الواجهة لتعكس الحالة الصحيحة.');
-            console.error('Checkout Error:', error);
-        } else {
-            alert('تم تسجيل انصرافك بنجاح.');
+    try {
+        // 1. جلب بيانات وردية المستخدم للتأكد من وقت الانتهاء
+        const { data: userWithVacancy, error: userError } = await supabaseClient.from('users').select('*, job_vacancies!users_vacancy_id_fkey(*)').eq('id', currentUser.id).single();
+        if (userError || !userWithVacancy?.job_vacancies?.schedule_details?.[0]) {
+            throw new Error('لم يتم العثور على تفاصيل ورديتك.');
         }
 
-        // رابعاً (الأهم): دائماً نُعيد تحميل الواجهة من قاعدة البيانات
-        // لضمان عرض الحالة الصحيحة 100%
-        loadAttendancePage(); 
+        const schedule = userWithVacancy.job_vacancies.schedule_details[0];
+        const [endHours, endMinutes] = schedule.end_time.split(':').map(Number);
+        const shiftEndTime = new Date();
+        shiftEndTime.setHours(endHours, endMinutes, 0, 0);
+
+        const now = new Date();
+        let newStatus = 'اكمل المناوبة'; // الحالة الافتراضية
+        let proceedToCheckout = false;
+
+        // 2. التحقق إذا كان الانصراف مبكراً
+        if (now < shiftEndTime) {
+            const warningMessage = "تنبيه! ورديتك لم تنته بعد.\n\nهل أنت متأكد من رغبتك في تسجيل الانصراف الآن؟\nسيتم تسجيل هذا الإجراء كـ 'انسحاب (انصراف مبكر)' وقد يترتب عليه خصومات.";
+            if (confirm(warningMessage)) {
+                newStatus = 'انسحاب (انصراف مبكر)'; // تغيير الحالة إذا وافق المستخدم
+                proceedToCheckout = true;
+            } else {
+                // إذا ألغى المستخدم، أعد كل شيء كما كان
+                checkOutBtn.disabled = false;
+                checkOutBtn.innerHTML = 'تسجيل انصراف';
+            }
+        } else {
+            // إذا لم يكن مبكراً، وافق على الانصراف مباشرة
+            proceedToCheckout = true;
+        }
+
+        // 3. تنفيذ الانصراف إذا تم التأكيد
+        if (proceedToCheckout) {
+            stopPersistentTracking();
+
+            const { error } = await supabaseClient
+                .from('attendance')
+                .update({
+                    checkout_at: new Date(),
+                    status: newStatus
+                })
+                .eq('id', checkOutBtn.dataset.attendanceId);
+
+            if (error) {
+                throw new Error('فشل تسجيل الانصراف في قاعدة البيانات.');
+            }
+
+            showToast('تم تسجيل انصرافك بنجاح.', 'success');
+            loadAttendancePage();
+        }
+
+    } catch (error) {
+        showCustomAlert('خطأ', error.message, 'error');
+        // إعادة تفعيل الزر في حالة حدوث أي خطأ
+        checkOutBtn.disabled = false;
+        checkOutBtn.innerHTML = 'تسجيل انصراف';
     }
 }
 // ===================== نهاية الاستبدال =====================
