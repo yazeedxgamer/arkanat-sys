@@ -79,6 +79,7 @@ body {
     font-weight: 600;
     border-radius: 8px; /* Rounded corners for tabs */
     transition: all 0.2s ease;
+    border: none; /* <-- هذا هو السطر الجديد والمهم */
 }
 
 .sidebar-nav a:hover {
@@ -267,7 +268,6 @@ table {
 th, td {
     padding: 15px;
     border-bottom: 1px solid var(--border-color);
-    white-space: nowrap; /* <-- هذا هو السطر الجديد والمهم */
 }
 th {
     font-weight: 700;
