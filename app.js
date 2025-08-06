@@ -1954,10 +1954,49 @@ function createLocationGroupHtml(location = {}) {
 }
 // نهاية الاستبدال
 
-function loadMyProfilePage() {
-    // هذه الدالة فارغة حالياً لأن الصفحة لا تحتاج لتحميل أي بيانات ديناميكية
-    // يمكننا إضافة منطق لها في المستقبل إذا احتجنا لذلك
-    console.log("My Profile page loaded.");
+async function loadMyProfilePage() {
+    const infoContainer = document.getElementById('guard-info-container');
+    // إخفاء الحاوية دائماً في البداية عند تحميل الصفحة
+    infoContainer.classList.add('hidden');
+
+    // التحقق إذا كان المستخدم الحالي حارس أمن
+    if (currentUser && currentUser.role === 'حارس أمن') {
+        try {
+            // جلب أحدث بيانات المستخدم مع تفاصيل الشاغر الوظيفي والراتب
+            const { data: userData, error } = await supabaseClient
+                .from('users')
+                .select('*, job_vacancies!users_vacancy_id_fkey(*)')
+                .eq('id', currentUser.id)
+                .single();
+
+            if (error) throw error;
+
+            // حساب الراتب الإجمالي من بيانات الشاغر
+            const vacancy = userData.job_vacancies;
+            let totalSalary = 0;
+            if (vacancy) {
+                totalSalary = (vacancy.base_salary || 0) + (vacancy.housing_allowance || 0) + (vacancy.transport_allowance || 0) + (vacancy.other_allowances || 0);
+            }
+
+            // تعبئة عناصر HTML بالبيانات التي تم جلبها
+            document.getElementById('profile-name').textContent = userData.name || 'غير متوفر';
+            document.getElementById('profile-id-number').textContent = userData.id_number || 'غير متوفر';
+            document.getElementById('profile-total-salary').textContent = totalSalary > 0 ? `${totalSalary.toLocaleString('ar-SA')} ر.س` : 'غير محدد';
+            document.getElementById('profile-bank-name').textContent = userData.bank_name || 'غير متوفر';
+            document.getElementById('profile-iban').textContent = userData.iban || 'غير متوفر';
+            document.getElementById('profile-project').textContent = Array.isArray(userData.project) ? userData.project.join(', ') : (userData.project || 'غير محدد');
+            document.getElementById('profile-location').textContent = userData.location || 'غير محدد';
+            
+            // إظهار الحاوية بعد تعبئتها بالبيانات
+            infoContainer.classList.remove('hidden');
+
+        } catch (err) {
+            console.error("Error fetching guard profile data:", err);
+            // في حال حدوث خطأ، يمكننا عرض رسالة للمستخدم
+            infoContainer.innerHTML = '<p style="text-align:center; color:red; padding: 20px;">حدث خطأ في تحميل البيانات الوظيفية.</p>';
+            infoContainer.classList.remove('hidden');
+        }
+    }
 }
 
 // ===================== نهاية الإضافة =====================
@@ -8670,33 +8709,51 @@ async function setupPushNotifications(btn) {
     }
 
     try {
-        console.log('طلب الإذن من المستخدم...');
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') {
             throw new Error('تم رفض إذن الإشعارات.');
         }
 
-        // --- الخطوة الجديدة: انتظر حتى يصبح الـ Service Worker نشطاً ---
-        console.log('الانتظار حتى يصبح ملف الإشعارات جاهزاً...');
         const readySW = await navigator.serviceWorker.ready;
-        console.log('ملف الإشعارات جاهز ونشط!', readySW);
-        
-        console.log('طلب توكن FCM...');
-        
-        
         const fcmToken = await messaging.getToken({ 
             vapidKey: config.vapidKey,
-            serviceWorkerRegistration: readySW // نمرر له النسخة الجاهزة
+            serviceWorkerRegistration: readySW
         });
 
         if (fcmToken) {
-            console.log('تم الحصول على التوكن بنجاح:', fcmToken);
-            await supabaseClient
-                .from('users')
-                .update({ fcm_token: fcmToken })
-                .eq('id', currentUser.id);
+            console.log('New FCM Token obtained for this device:', fcmToken);
             
-            alert('تم تفعيل الإشعارات بنجاح!');
+            // --- بداية المنطق الجديد لإضافة التوكن بدلاً من استبداله ---
+
+            // 1. جلب قائمة التوكنات الحالية للمستخدم
+            const { data: user, error: fetchError } = await supabaseClient
+                .from('users')
+                .select('fcm_token')
+                .eq('id', currentUser.id)
+                .single();
+            if (fetchError) throw fetchError;
+
+            // 2. تجهيز القائمة الجديدة
+            const currentTokens = user.fcm_token || []; // إذا كان الحقل فارغاً، نبدأ بقائمة فارغة
+            
+            // 3. إضافة التوكن الجديد فقط إذا لم يكن موجوداً مسبقاً
+            if (currentTokens.includes(fcmToken)) {
+                console.log('Token already registered for this device.');
+            } else {
+                console.log('Adding new token to the list.');
+                currentTokens.push(fcmToken);
+            }
+
+            // 4. تحديث سجل المستخدم بالقائمة الجديدة
+            const { error: updateError } = await supabaseClient
+                .from('users')
+                .update({ fcm_token: currentTokens })
+                .eq('id', currentUser.id);
+            if (updateError) throw updateError;
+            
+            // --- نهاية المنطق الجديد ---
+
+            alert('تم تفعيل الإشعارات لهذا الجهاز بنجاح!');
             btn.style.color = '#22c55e';
         } else {
              throw new Error('لم يتمكن من الحصول على توكن.');
@@ -8704,7 +8761,6 @@ async function setupPushNotifications(btn) {
 
     } catch (err) {
         console.error('حدث خطأ أثناء إعداد الإشعارات:', err);
-        // عرض الرسالة التي ظهرت في الصورة للمستخدم
         alert(`فشل تفعيل الإشعارات:\n${err.message}`);
     } finally {
         btn.disabled = false;
