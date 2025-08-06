@@ -1809,6 +1809,41 @@ th {
     border-bottom: 1px solid #e5e7eb;
 }
 /* نهاية الإضافة */
+
+/* ==================== بداية الإضافة: تنسيقات جدول سجل الحضور ==================== */
+.attendance-log-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 15px;
+}
+.attendance-log-table th, 
+.attendance-log-table td {
+    text-align: right;
+    padding: 12px 15px;
+    border-bottom: 1px solid var(--border-color);
+}
+.attendance-log-table thead th {
+    background-color: #f8f9fa;
+    font-weight: 700;
+    color: var(--text-secondary);
+}
+.location-header-row th {
+    background-color: var(--sidebar-bg);
+    color: white;
+    padding: 10px 15px;
+    font-size: 1.2rem;
+    text-align: center !important;
+}
+.status.completed {
+    background-color: #e5e7eb;
+    color: #4b5563;
+}
+.status.permission {
+    background-color: #fef9c3;
+    color: #a16207;
+}
+/* ===================== نهاية الإضافة: تنسيقات جدول سجل الحضور ===================== */
+
 /* بداية الإضافة */
 .attachments-grid {
     display: grid;
@@ -3179,3 +3214,45 @@ body {
 .map-stats-bar {
     flex-wrap: wrap;
 }
+/* بداية الإضافة */
+/* ======================================================= */
+/* ===   بداية الإضافة: تحسين النوافذ المنبثقة العامة    === */
+/* ======================================================= */
+
+/* نجعل لوحة النافذة تتمدد بمرونة وتأخذ ارتفاع الشاشة كحد أقصى */
+.modal-panel {
+    display: flex;
+    flex-direction: column;
+    max-height: 90vh; /* الحد الأقصى للارتفاع هو 90% من ارتفاع الشاشة */
+}
+
+/* نجعل جسم النافذة هو الجزء الذي يتمدد ويقبل السكرول */
+.modal-body {
+    flex-grow: 1; /* يسمح لهذا الجزء بأخذ المساحة المتبقية */
+    overflow-y: auto; /* يضيف شريط تمرير عمودي فقط عند الحاجة */
+}
+
+/* تحسينات إضافية لنافذة تقديم الوظائف لأنها أطول */
+#job-application-modal .modal-panel {
+    max-width: 700px; /* عرض أكبر قليلاً لتناسب المحتوى */
+}
+
+/* تحسينات لشاشات الجوال الصغيرة */
+@media (max-width: 768px) {
+    .modal-body {
+        /* تقليل الحشو قليلاً في الجوال لإعطاء مساحة أكبر للمحتوى */
+        padding: 20px; 
+    }
+
+    #job-application-modal .modal-panel,
+    #apply-modal .modal-panel {
+        /* جعل النافذة تأخذ عرض الشاشة بالكامل تقريباً في الجوال */
+        width: 95%;
+        max-height: 85vh; /* تقليل الارتفاع قليلاً في الجوال */
+    }
+}
+
+/* ======================================================= */
+/* ===                   نهاية الإضافة                   === */
+/* ======================================================= */
+/* نهاية الإضافة */
