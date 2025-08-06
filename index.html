@@ -47,7 +47,7 @@
             </div>
             <nav class="sidebar-nav">
     <ul>
-        <li data-role="مشرف,ادارة العمليات"><a href="#" data-page="page-permission-requests"><i class="ph-fill ph-user-switch"></i><span>طلبات الاستئذان</span></a></li>
+        <li data-role="ادارة العمليات"><a href="#" data-page="page-permission-requests"><i class="ph-fill ph-user-switch"></i><span>طلبات الاستئذان</span></a></li>
         <li data-role="ادارة العمليات"><a href="#" data-page="page-ops-review-requests"><i class="ph-fill ph-clipboard-text"></i><span>طلبات الموظفين</span></a></li>
         <li data-role="مدير النظام,ادارة العمليات,مشرف"><a href="#statistics" data-page="page-geo"><i class="ph-fill ph-map-pin"></i><span>التتبع الجغرافي</span></a></li>
         <li data-role="ادارة العمليات"><a href="#" data-page="page-coverage"><i class="ph-fill ph-shield-check"></i><span>التغطيات</span></a></li>
@@ -69,6 +69,7 @@
         <li data-role="ادارة الموارد البشرية"><a href="#" data-page="page-employees"><i class="ph-fill ph-user-list"></i><span>إدارة الموظفين</span></a></li>
         <li data-role="ادارة الموارد البشرية"><a href="#" data-page="page-hr-data-entry"><i class="ph-fill ph-file-arrow-up"></i><span>إدخال البيانات</span></a></li>
         <li data-role="ادارة الموارد البشرية"><a href="#" data-page="page-payroll"><i class="ph-fill ph-file-text"></i><span>مسير الرواتب</span></a></li>
+        <li data-role="مدير النظام"><a href="#" data-page="page-hr-sms"><i class="ph-fill ph-paper-plane-tilt"></i><span>إرسال SMS</span></a></li>
         <li data-role="ادارة الموارد البشرية"><a href="#" data-page="page-official-holidays"><i class="ph-fill ph-calendar-star"></i><span>العطلات الرسمية</span></a></li>
         <li data-role="ادارة الموارد البشرية"><a href="#" data-page="page-penalties"><i class="ph-fill ph-scales"></i><span>العقوبات والخصومات</span></a></li>
         <li data-role="ادارة الموارد البشرية"><a href="#" data-page="page-hr-ops-hiring"><i class="ph-fill ph-user-check"></i><span>توظيف العمليات</span></a></li>
@@ -429,6 +430,20 @@
             <div>
                 <h4>الحضور الحالي</h4>
                 <p><span id="map-stats-present">0</span> / <span id="map-stats-scheduled">0</span></p>
+            </div>
+        </div>
+        <div class="map-stat-card">
+            <div class="stat-icon" style="background-color: #ef444420; color: #ef4444;"><i class="ph-bold ph-user-circle-minus"></i></div>
+            <div>
+                <h4>الغياب</h4>
+                <p id="map-stats-absent">0</p>
+            </div>
+        </div>
+        <div class="map-stat-card">
+            <div class="stat-icon" style="background-color: #a855f720; color: #a855f7;"><i class="ph-bold ph-user-switch"></i></div>
+            <div>
+                <h4>استئذان</h4>
+                <p id="map-stats-permission">0</p>
             </div>
         </div>
         <div class="map-stat-card">
@@ -853,6 +868,43 @@
 </div>
 
 <div id="page-guard-attendance" class="page-content hidden">
+    <div class="map-stats-bar">
+        <div class="map-stat-card">
+    <div class="stat-icon" style="background-color: #22c55e20; color: #22c55e;"><i class="ph-bold ph-user-circle-check"></i></div>
+    <div>
+        <h4>الحضور الحالي</h4>
+        <p><span id="stats-guard-present">0</span> / <span id="stats-guard-scheduled">0</span></p>
+    </div>
+</div>
+<div class="map-stat-card">
+    <div class="stat-icon" style="background-color: #a855f720; color: #a855f7;"><i class="ph-bold ph-user-switch"></i></div>
+    <div>
+        <h4>استئذان</h4>
+        <p id="stats-guard-permission">0</p>
+    </div>
+</div>
+    <div class="map-stat-card">
+        <div class="stat-icon" style="background-color: #f59e0b20; color: #f59e0b;"><i class="ph-bold ph-coffee"></i></div>
+        <div>
+            <h4>في راحة</h4>
+            <p id="stats-guard-off">0</p>
+        </div>
+    </div>
+    <div class="map-stat-card">
+        <div class="stat-icon" style="background-color: #ef444420; color: #ef4444;"><i class="ph-bold ph-user-circle-minus"></i></div>
+        <div>
+            <h4>غياب</h4>
+            <p id="stats-guard-absent">0</p>
+        </div>
+    </div>
+    <div class="map-stat-card">
+        <div class="stat-icon" style="background-color: #6366f120; color: #6366f1;"><i class="ph-bold ph-arrow-fat-line-left"></i></div>
+        <div>
+            <h4>انسحاب</h4>
+            <p id="stats-guard-withdrawal">0</p>
+        </div>
+    </div>
+</div>
     <div class="page-header">
     <h3>متابعة حضور الحراس</h3>
     <div> <button id="send-to-all-guards-btn" class="btn btn-primary"><i class="ph-bold ph-users-three"></i> <span>إرسال توجيه للكل</span></button>
@@ -995,6 +1047,8 @@
         </a>
     </div>
 
+
+
     <div id="hr-new-reviews" class="tab-content active">
         <div id="hr-ops-hiring-new-container" class="all-requests-container" style="padding-top:20px;">
             <p style="text-align: center;">جاري تحميل المراجعات الجديدة...</p>
@@ -1003,6 +1057,29 @@
     <div id="hr-archive-reviews" class="tab-content">
         <div id="hr-ops-hiring-archive-container" class="all-requests-container" style="padding-top:20px;">
             <p style="text-align: center;">جاري تحميل الأرشيف...</p>
+        </div>
+    </div>
+</div> <div id="page-hr-sms" class="page-content hidden">
+    <div class="page-header">
+        <h3>إرسال رسالة نصية (تجريبي)</h3>
+    </div>
+    <div class="review-request-card" style="max-width: 700px; margin: 20px auto 0;">
+        <div class="review-request-body">
+            <form id="hr-send-sms-form">
+                <div class="form-group">
+                    <label for="sms-recipient">رقم الجوال</label>
+                    <input type="tel" id="sms-recipient" placeholder="مثال: 05xxxxxxx أو +966xxxxxxxxx" required>
+                </div>
+                <div class="form-group">
+                    <label for="sms-content">نص الرسالة</label>
+                    <textarea id="sms-content" rows="5" placeholder="اكتب رسالتك هنا..." required></textarea>
+                </div>
+                <div style="text-align: left; margin-top: 20px;">
+                    <button type="submit" id="hr-submit-sms-btn" class="btn btn-primary">
+                        <i class="ph-bold ph-paper-plane-right"></i> إرسال الرسالة
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
