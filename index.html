@@ -440,27 +440,13 @@
                 
                 
                 <div id="page-jobs" class="page-content hidden"><p>محتوى صفحة الوظائف هنا.</p></div>
-                <div id="page-geo" class="page-content hidden" style="position: relative; padding: 0;">
+                <div id="page-geo" class="page-content hidden" style="position: relative; padding: 0; display: flex; flex-direction: column;">
     <div class="map-stats-bar">
         <div class="map-stat-card">
             <div class="stat-icon" style="background-color: #22c55e20; color: #22c55e;"><i class="ph-bold ph-user-circle-check"></i></div>
             <div>
                 <h4>الحضور الحالي</h4>
                 <p><span id="map-stats-present">0</span> / <span id="map-stats-scheduled">0</span></p>
-            </div>
-        </div>
-        <div class="map-stat-card">
-            <div class="stat-icon" style="background-color: #ef444420; color: #ef4444;"><i class="ph-bold ph-user-circle-minus"></i></div>
-            <div>
-                <h4>الغياب</h4>
-                <p id="map-stats-absent">0</p>
-            </div>
-        </div>
-        <div class="map-stat-card">
-            <div class="stat-icon" style="background-color: #a855f720; color: #a855f7;"><i class="ph-bold ph-user-switch"></i></div>
-            <div>
-                <h4>استئذان</h4>
-                <p id="map-stats-permission">0</p>
             </div>
         </div>
         <div class="map-stat-card">
@@ -471,23 +457,69 @@
             </div>
         </div>
         <div class="map-stat-card">
+            <div class="stat-icon" style="background-color: #ef444420; color: #ef4444;"><i class="ph-bold ph-user-circle-minus"></i></div>
+            <div>
+                <h4>الغياب</h4>
+                <p id="map-stats-absent">0</p>
+            </div>
+        </div>
+        <div class="map-stat-card">
+            <div class="stat-icon" style="background-color: #6366f120; color: #6366f1;"><i class="ph-bold ph-arrow-fat-line-left"></i></div>
+            <div>
+                <h4>انسحاب</h4>
+                <p id="map-stats-withdrawal">0</p>
+            </div>
+        </div>
+        <div class="map-stat-card">
+            <div class="stat-icon" style="background-color: #a855f720; color: #a855f7;"><i class="ph-bold ph-user-switch"></i></div>
+            <div>
+                <h4>استئذان</h4>
+                <p id="map-stats-permission">0</p>
+            </div>
+        </div>
+        <div class="map-stat-card">
             <div class="stat-icon" style="background-color: #ef444420; color: #ef4444;"><i class="ph-bold ph-user-circle-plus"></i></div>
             <div>
                 <h4>الشواغر المفتوحة</h4>
                 <p id="map-stats-vacancies">0</p>
             </div>
         </div>
-        
+
         <div id="map-search-container">
             <input type="text" id="map-search-input" placeholder="ابحث باسم الحارس...">
             <button id="map-search-btn" class="btn btn-primary" style="padding: 8px 12px;"><i class="ph-bold ph-magnifying-glass"></i></button>
         </div>
     </div>
-    <div id="map"></div>
-    <div id="map-search-container" style="position: absolute; top: 10px; right: 10px; z-index: 1000; background: white; padding: 10px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.2); display: flex; gap: 5px;">
-
+    <div class="report-filters-card" style="border-radius: 0; box-shadow: none; border-bottom: 1px solid var(--border-color); padding: 15px 25px;">
+        <div class="filter-grid" style="grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));">
+            <div class="filter-group">
+                <label>المنطقة</label>
+                <select id="geo-filter-region" class="geo-filter-control cascading-filter-geo" data-target="geo-filter-city">
+                    <option value="">كل المناطق</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>المدينة</label>
+                <select id="geo-filter-city" class="geo-filter-control cascading-filter-geo" data-target="geo-filter-project" disabled>
+                    <option value="">اختر منطقة أولاً</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>المشروع</label>
+                <select id="geo-filter-project" class="geo-filter-control cascading-filter-geo" data-target="geo-filter-location" disabled>
+                    <option value="">اختر مدينة أولاً</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>الموقع</label>
+                <select id="geo-filter-location" class="geo-filter-control" disabled>
+                    <option value="">اختر مشروعاً أولاً</option>
+                </select>
+            </div>
+        </div>
     </div>
-    </div>
+    <div id="map" style="flex-grow: 1; width: 100%;"></div>
+</div>
                 <div id="page-schedules" class="page-content hidden"><p>محتوى صفحة الجداول والمناوبات هنا.</p></div>
                 <div id="page-coverage" class="page-content hidden">
     <div class="page-header">
@@ -724,8 +756,8 @@
         </div>
     </div>
 </div>
-    <div id="hr-attendance-accordion-container" class="attendance-accordion">
-        <p style="text-align: center;">الرجاء تحديد فترة زمنية لعرض السجلات.</p>
+    <div id="hr-attendance-log-container" class="table-container">
+        <p style="text-align: center;">الرجاء استخدام الفلاتر أعلاه لعرض السجلات.</p>
     </div>
 </div>
 <div id="page-attendance-management" class="page-content hidden">
@@ -893,11 +925,40 @@
         <p><span id="stats-guard-present">0</span> / <span id="stats-guard-scheduled">0</span></p>
     </div>
 </div>
+
+<div class="map-stat-card">
+    <div class="stat-icon" style="background-color: #3b82f620; color: #3b82f6;"><i class="ph-bold ph-shield-check"></i></div>
+    <div>
+        <h4>حراس التغطيات</h4>
+        <p id="stats-guard-coverage">0</p>
+    </div>
+</div>
+    <div class="map-stat-card">
+        <div class="stat-icon" style="background-color: #ef444420; color: #ef4444;"><i class="ph-bold ph-user-circle-minus"></i></div>
+        <div>
+            <h4>غياب</h4>
+            <p id="stats-guard-absent">0</p>
+        </div>
+    </div>
+        <div class="map-stat-card">
+        <div class="stat-icon" style="background-color: #6366f120; color: #6366f1;"><i class="ph-bold ph-arrow-fat-line-left"></i></div>
+        <div>
+            <h4>انسحاب</h4>
+            <p id="stats-guard-withdrawal">0</p>
+        </div>
+    </div>
 <div class="map-stat-card">
     <div class="stat-icon" style="background-color: #a855f720; color: #a855f7;"><i class="ph-bold ph-user-switch"></i></div>
     <div>
         <h4>استئذان</h4>
         <p id="stats-guard-permission">0</p>
+    </div>
+</div>
+<div class="map-stat-card">
+    <div class="stat-icon" style="background-color: #ef444420; color: #ef4444;"><i class="ph-bold ph-user-circle-plus"></i></div>
+    <div>
+        <h4>الشواغر المفتوحة</h4>
+        <p id="stats-guard-vacancies">0</p>
     </div>
 </div>
     <div class="map-stat-card">
@@ -907,19 +968,71 @@
             <p id="stats-guard-off">0</p>
         </div>
     </div>
-    <div class="map-stat-card">
-        <div class="stat-icon" style="background-color: #ef444420; color: #ef4444;"><i class="ph-bold ph-user-circle-minus"></i></div>
-        <div>
-            <h4>غياب</h4>
-            <p id="stats-guard-absent">0</p>
+</div>
+    <div class="report-filters-card" style="margin-bottom: 20px; margin-top: 20px;">
+    <div class="filter-grid" style="grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));">
+
+        <div class="filter-group">
+            <label>بحث بالاسم أو الهوية</label>
+            <input type="text" id="ga-filter-search" class="ga-filter-control" placeholder="ابحث...">
         </div>
-    </div>
-    <div class="map-stat-card">
-        <div class="stat-icon" style="background-color: #6366f120; color: #6366f1;"><i class="ph-bold ph-arrow-fat-line-left"></i></div>
-        <div>
-            <h4>انسحاب</h4>
-            <p id="stats-guard-withdrawal">0</p>
+
+        <div class="filter-group">
+            <label>الحالة</label>
+            <select id="ga-filter-status" class="ga-filter-control">
+                <option value="">الكل</option>
+                <option value="حاضر">حاضر</option>
+                <option value="غياب">غياب</option>
+                <option value="استئذان">استئذان</option>
+                <option value="انسحاب">انسحاب</option>
+                <option value="في راحة">في راحة</option>
+                <option value="وردية قادمة">وردية قادمة</option>
+            </select>
         </div>
+
+        <div class="filter-group">
+            <label>بداية الوردية (من)</label>
+            <input type="time" id="ga-filter-time-from" class="ga-filter-control">
+        </div>
+
+        <div class="filter-group">
+            <label>بداية الوردية (إلى)</label>
+            <div style="display: flex; align-items: center; gap: 5px;">
+                <input type="time" id="ga-filter-time-to" class="ga-filter-control" style="flex-grow: 1;">
+                <button id="ga-clear-time-filter" class="btn-action" title="مسح فلتر الوقت" style="padding: 8px; border: 1px solid var(--border-color); border-radius: 6px;">
+                    <i class="ph-bold ph-x-circle"></i>
+                </button>
+            </div>
+        </div>
+
+        <div class="filter-group">
+            <label>المنطقة</label>
+            <select id="ga-filter-region" class="ga-filter-control cascading-filter-ga" data-target="ga-filter-city">
+                <option value="">كل المناطق</option>
+            </select>
+        </div>
+
+        <div class="filter-group">
+            <label>المدينة</label>
+            <select id="ga-filter-city" class="ga-filter-control cascading-filter-ga" data-target="ga-filter-project" disabled>
+                <option value="">اختر منطقة أولاً</option>
+            </select>
+        </div>
+
+        <div class="filter-group">
+            <label>المشروع</label>
+            <select id="ga-filter-project" class="ga-filter-control cascading-filter-ga" data-target="ga-filter-location" disabled>
+                <option value="">اختر مدينة أولاً</option>
+            </select>
+        </div>
+
+        <div class="filter-group">
+            <label>الموقع</label>
+            <select id="ga-filter-location" class="ga-filter-control" disabled>
+                <option value="">اختر مشروعاً أولاً</option>
+            </select>
+        </div>
+
     </div>
 </div>
     <div class="page-header">
