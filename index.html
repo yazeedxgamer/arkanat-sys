@@ -131,7 +131,24 @@
                     <div id="page-my-profile" class="page-content hidden">
     <div class="page-header">
         <h3>ملفي الشخصي وإعدادات الحساب</h3>
+    </div> 
+    <div id="guard-info-container" class="review-request-card hidden" style="max-width: 800px; margin-bottom: 30px;">
+    <div class="review-request-header status-approved" style="color: var(--text-primary);">
+        <h4>بياناتي الوظيفية</h4>
     </div>
+    <div class="review-request-body">
+        <div class="request-meta-grid" style="grid-template-columns: 1fr 1fr; gap: 20px;">
+            <div class="request-meta-item"><i class="ph-bold ph-user"></i><span><strong>الاسم:</strong> <span id="profile-name">-</span></span></div>
+            <div class="request-meta-item"><i class="ph-bold ph-identification-card"></i><span><strong>رقم الهوية:</strong> <span id="profile-id-number">-</span></span></div>
+            <div class="request-meta-item"><i class="ph-bold ph-money"></i><span><strong>الراتب الإجمالي:</strong> <span id="profile-total-salary">-</span></span></div>
+            <div class="request-meta-item"><i class="ph-bold ph-bank"></i><span><strong>اسم البنك:</strong> <span id="profile-bank-name">-</span></span></div>
+            <div class="request-meta-item" style="grid-column: 1 / -1;"><i class="ph-bold ph-credit-card"></i><span><strong>رقم الآيبان:</strong> <span id="profile-iban">-</span></span></div>
+            <hr style="grid-column: 1 / -1; margin: 5px 0; border-color: var(--border-color);">
+            <div class="request-meta-item"><i class="ph-bold ph-briefcase"></i><span><strong>المشروع:</strong> <span id="profile-project">-</span></span></div>
+            <div class="request-meta-item"><i class="ph-bold ph-map-pin"></i><span><strong>الموقع:</strong> <span id="profile-location">-</span></span></div>
+        </div>
+    </div>
+</div>
     <div class="attendance-card" style="max-width: 600px; margin: 0;">
         <h4>تغيير كلمة المرور</h4>
         <div class="form-group">
