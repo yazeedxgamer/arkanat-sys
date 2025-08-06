@@ -2942,3 +2942,240 @@ body {
     color: white;
     width: 150px;
 }
+/* ======================================================= */
+/* ===   بداية الإضافة: تصميم جديد لصفحة حضور الحراس    === */
+/* ======================================================= */
+
+/* الحاوية الرئيسية للأقسام */
+.attendance-accordion-group {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+}
+
+/* تنسيق كل قسم (كل موقع) */
+.attendance-accordion-group details {
+    background-color: var(--secondary-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.attendance-accordion-group details[open] {
+    border-color: var(--accent-color);
+}
+
+/* تنسيق عنوان المجموعة (المشروع/الموقع) */
+.attendance-accordion-group summary {
+    padding: 15px 20px;
+    font-size: 1.2rem;
+    font-weight: 700;
+    cursor: pointer;
+    list-style: none; /* إخفاء السهم الافتراضي */
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: background-color 0.2s;
+}
+
+.attendance-accordion-group summary:hover {
+    background-color: #f8f9fa;
+}
+
+.attendance-accordion-group details[open] > summary {
+    background-color: #eef2ff;
+    color: var(--accent-color);
+}
+
+/* أيقونة السهم بجانب العنوان */
+.attendance-accordion-group summary::before {
+    content: '\ea3a'; /* أيقونة سهم من Phosphor Icons */
+    font-family: 'Phosphor Icons';
+    font-weight: bold;
+    font-size: 1rem;
+    transition: transform 0.2s ease;
+    margin-left: 10px;
+}
+
+.attendance-accordion-group details[open] > summary::before {
+    transform: rotate(90deg);
+}
+
+/* حاوية ملخص الحضور (مثال: 4 / 5) */
+.attendance-summary {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.attendance-accordion-group details[open] > summary .attendance-summary {
+    color: var(--accent-color);
+}
+
+/* محتوى القسم (قائمة الحراس) */
+.attendance-accordion-group .content {
+    padding: 0 10px 10px 10px;
+    border-top: 1px solid var(--border-color);
+}
+
+/* تصميم كل حارس داخل القائمة */
+.guard-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 15px 10px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.guard-row:last-child {
+    border-bottom: none;
+}
+
+.guard-info {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+}
+
+.guard-info strong {
+    font-size: 1.1rem;
+    font-weight: 700;
+}
+
+/* تصميم شارة الحالة (الدائرة الملونة) */
+.status-indicator {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.status-indicator.present { background-color: var(--approved-color); }
+.status-indicator.absent { background-color: var(--denied-color); }
+.status-indicator.off { background-color: var(--pending-color); }
+.status-indicator.auto-checkout { background-color: #6b7280; }
+
+.guard-status-details {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.guard-actions {
+    display: flex;
+    gap: 10px;
+}
+
+/* ======================================================= */
+/* ===                  نهاية الإضافة                   === */
+/* ======================================================= */
+/* ======================================================= */
+/* ===    بداية الإضافة: تصميم البطاقات لصفحة حضور الحراس   === */
+/* ======================================================= */
+
+/* الحاوية الشبكية للبطاقات */
+.guard-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+    gap: 20px;
+}
+
+/* تصميم البطاقة الواحدة */
+.guard-card {
+    background-color: var(--secondary-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+    display: flex;
+    flex-direction: column;
+    border-top: 5px solid; /* سيتم تحديد اللون لاحقاً بالجافاسكريبت */
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.guard-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 6px 12px rgba(0,0,0,0.08);
+}
+
+/* تحديد لون الشريط العلوي حسب الحالة */
+.guard-card.status-present { border-top-color: var(--approved-color); }
+.guard-card.status-absent { border-top-color: var(--denied-color); }
+.guard-card.status-off { border-top-color: var(--pending-color); }
+.guard-card.status-auto-checkout { border-top-color: #6b7280; }
+
+
+/* جسم البطاقة */
+.guard-card-body {
+    padding: 20px;
+    flex-grow: 1; /* لجعل الجسم يأخذ المساحة المتاحة */
+}
+
+/* معلومات الحارس الأساسية */
+.guard-card-info h4 {
+    margin: 0 0 5px 0;
+    font-size: 1.3rem;
+    font-weight: 700;
+}
+
+.guard-card-info p {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* قسم تفاصيل الحالة */
+.guard-card-status {
+    margin-top: 15px;
+    padding-top: 15px;
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+/* قسم الأزرار */
+.guard-card-actions {
+    padding: 15px 20px;
+    background-color: #f8f9fa;
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    justify-content: flex-end; /* لمحاذاة الأزرار لليسار */
+    gap: 10px;
+}
+/* ==================== بداية الإضافة: تنسيق رسالة القفل ==================== */
+.lockout-message {
+    text-align: center;
+    padding: 15px;
+}
+.lockout-message h4 {
+    font-size: 1.3rem;
+    color: var(--denied-color);
+    margin: 0 0 10px 0;
+}
+.lockout-message p {
+    font-size: 1rem;
+    margin: 0 0 20px 0;
+    line-height: 1.6;
+}
+.lockout-message small {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    opacity: 0.8;
+}
+/* ===================== نهاية الإضافة: تنسيق رسالة القفل ===================== */
+
+/* ======================================================= */
+/* ===                  نهاية الإضافة                   === */
+/* ======================================================= */
+/* ======================================================= */
+/* ===    بداية الإضافة: تعديل بسيط على شريط الإحصائيات   === */
+/* ======================================================= */
+
+/* جعل شريط الإحصائيات يلتف بشكل أفضل في الشاشات الصغيرة */
+.map-stats-bar {
+    flex-wrap: wrap;
+}
