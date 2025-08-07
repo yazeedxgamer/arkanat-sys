@@ -6285,138 +6285,107 @@ async function refreshCurrentUser() {
     }
 }
 
+// ==========================================================
+// ===       بداية الاستبدال: نظام الروابط والتنقل المطور       ===
+// ==========================================================
+
+async function refreshCurrentUser() {
+    if (currentUser && currentUser.id) {
+        const { data, error } = await supabaseClient.from('users').select('*').eq('id', currentUser.id).single();
+        if (data) {
+            currentUser = data;
+            sessionStorage.setItem('currentUser', JSON.stringify(data));
+        }
+    }
+}
+
+async function handleRouteChange(isInitialLoad = false) {
+    if (!isInitialLoad) {
+        await refreshCurrentUser();
+    }
+
+    if (activeSubscription) {
+        supabaseClient.removeChannel(activeSubscription);
+        activeSubscription = null;
+    }
+    if (pageRefreshInterval) {
+        clearInterval(pageRefreshInterval);
+        pageRefreshInterval = null;
+    }
+
+    const path = window.location.pathname;
+    let linkToActivate = document.querySelector(`.sidebar-nav a[href="${path}"]`);
+
+    if (path === '/' || path === '/index.html' || !linkToActivate) {
+        linkToActivate = document.querySelector('.sidebar-nav li[style*="display: block"] a');
+        if (linkToActivate) {
+            history.replaceState(null, '', linkToActivate.getAttribute('href'));
+        }
+    }
+
+    if (!linkToActivate) return;
+
+    const targetPageId = linkToActivate.dataset.page;
+    sessionStorage.setItem('lastVisitedPage', targetPageId);
+
+    document.getElementById('main-title').textContent = linkToActivate.querySelector('span').textContent;
+    document.querySelectorAll('.sidebar-nav a').forEach(navLink => navLink.classList.remove('active'));
+    linkToActivate.classList.add('active');
+
+    document.querySelectorAll('.page-content').forEach(page => page.classList.add('hidden'));
+    const targetPage = document.getElementById(targetPageId);
+
+    if (targetPage) {
+        targetPage.classList.remove('hidden');
+
+        const pageLoaders = {
+            'page-geo': () => { initializeFilters('geo'); initializeMap(); },
+            'page-employees': () => { initializeFilters('hr-employees'); loadEmployeeTabData(); },
+            'page-hr-attendance-log': () => { initializeFilters('hr-attlog'); loadHrAttendanceLogPage(); },
+            'page-attendance-management': () => { initializeFilters('hr-attmgmt'); loadAttendanceManagementPage(); },
+            'page-payroll': () => {
+                document.getElementById('payroll-results-container').innerHTML = '<p style="text-align: center;">الرجاء اختيار الشهر والضغط على "توليد المسير" لعرض البيانات.</p>';
+                initializeFilters('hr-payroll');
+            },
+            'page-vacancies': () => { initializeFilters('vc'); loadVacancyTabData(); },
+            'page-contracts': () => { initializeContractFilters(); fetchContracts(); },
+            'page-penalties': () => { initializeFilters('hr-penalties'); loadPenaltiesPage(); },
+            'page-coverage': () => { loadCoveragePage(); pageRefreshInterval = setInterval(loadCoveragePage, 60000); },
+            'page-supervisor-applications': () => { loadSupervisorApplicationsPage(); pageRefreshInterval = setInterval(loadSupervisorApplicationsPage, 60000); },
+            'page-attendance': loadAttendancePage, 'page-my-requests': loadMyRequestsPage, 'page-permission-requests': loadPermissionRequests,
+            'page-ops-review-requests': loadOpsReviewRequestsPage, 'page-visits': fetchVisits, 'page-my-profile': loadMyProfilePage,
+            'page-admin-dashboard': loadAdminDashboardPage, 'page-announcements': loadAnnouncementsPage, 'page-user-management': loadUserManagementPage,
+            'page-ops-nominees': loadOpsNomineesPage, 'page-directives-ops': loadOpsDirectivesPage, 'page-guard-attendance': () => { initializeGuardAttendanceFilters(); loadGuardAttendancePage(); },
+            'page-patrol': loadSupervisorPatrolPage, 'page-supervisor-schedules': loadSupervisorSchedulesPage, 'page-supervisor-permission-requests': loadSupervisorPermissionRequestsPage,
+            'page-supervisor-coverage-apps': loadSupervisorCoverageAppsPage, 'page-finance-coverage': loadFinanceCoveragePage,
+            'page-hr-data-entry': () => { document.getElementById('import-results-container').innerHTML = ''; }, 'page-official-holidays': loadHolidaysPage,
+            'page-hr-ops-hiring': loadHrOpsHiringPage, 'page-coverage-requests': loadCoverageRequestsPage, 'page-leave-requests': loadLeaveRequests,
+            'page-resignation-requests': loadResignationRequests, 'page-loan-requests': loadLoanRequests, 'page-requests-archive': () => loadArchivePage('leave'),
+            'page-my-directives': loadMyDirectivesPage, 'page-my-schedule': loadMySchedulePage, 'page-my-visits': loadMyVisitsPage,
+            'page-hr-sms': () => {} // صفحة فارغة لا تحتاج لدالة تحميل
+        };
+
+        if (pageLoaders[targetPageId]) {
+            pageLoaders[targetPageId]();
+        }
+    }
+}
+
 navLinks.forEach(link => {
-    link.addEventListener('click', async function(event) { // تم تحويلها إلى async
+    link.addEventListener('click', function(event) {
         event.preventDefault();
-
-        // ==========================================================
-        // ===        بداية الإضافة: المنظف الذكي للاشتراكات        ===
-        // ==========================================================
-        // 1. إلغاء أي اشتراك فعال حالي عند التنقل لصفحة جديدة
-        if (activeSubscription) {
-            supabaseClient.removeChannel(activeSubscription);
-            activeSubscription = null;
-            console.log('Realtime subscription stopped.');
-        }
-        // 2. إيقاف أي مؤقت تحديث قديم لضمان عدم تداخل العمليات
-        if (pageRefreshInterval) {
-            clearInterval(pageRefreshInterval);
-            pageRefreshInterval = null;
-        }
-        // ==========================================================
-        // ===                 نهاية الإضافة                     ===
-        // ==========================================================
-        
-        await refreshCurrentUser(); // نضمن تحديث بيانات المستخدم قبل فتح أي صفحة
-
-        const targetPageId = this.dataset.page;
-        if (!targetPageId) return;
-
-        sessionStorage.setItem('lastVisitedPage', targetPageId);
-
-        mainTitle.textContent = this.querySelector('span').textContent;
-        navLinks.forEach(navLink => navLink.classList.remove('active'));
-        this.classList.add('active');
-        pageContents.forEach(page => page.classList.add('hidden'));
-
-        const targetPage = document.getElementById(targetPageId);
-        if (targetPage) {
-            targetPage.classList.remove('hidden');
-        }
-
-        // استدعاء الدوال الخاصة بكل صفحة (هذا الجزء يبقى كما هو)
-        if (targetPageId === 'page-clients') fetchClients();
-        if (targetPageId === 'page-users') fetchUsers();
-        if (targetPageId === 'page-jobs') fetchJobs();
-        if (targetPageId === 'page-geo') {
-            initializeMap();
-            initializeFilters('geo'); // تهيئة فلاتر صفحة التتبع الجغرافي
-        }
-        if (targetPageId === 'page-schedules') fetchSchedules();
-        if (targetPageId === 'page-coverage') {
-            loadCoveragePage(); // التشغيل الفوري مرة واحدة
-            pageRefreshInterval = setInterval(loadCoveragePage, 60000); // ثم التحديث كل دقيقة
-        }
-        if (targetPageId === 'page-visits') fetchVisits();
-        if (targetPageId === 'page-reports') loadReportsPage();
-        if (targetPageId === 'page-attendance') loadAttendancePage();
-        if (targetPageId === 'page-guard-attendance') {
-            initializeGuardAttendanceFilters(); // تهيئة فلاتر صفحة حضور الحراس
-            loadGuardAttendancePage();
-            initializeFilters('ga'); // تهيئة فلاتر صفحة حضور الحراس
-        }
-        if (targetPageId === 'page-patrol') loadSupervisorPatrolPage();
-        if (targetPageId === 'page-contracts') {
-    initializeContractFilters();
-    fetchContracts();
-}
-        if (targetPageId === 'page-vacancies') {
-            initializeFilters('vc'); // تهيئة فلاتر صفحة الشواغر
-            loadVacancyTabData();
-        }
-        if (targetPageId === 'page-employees') {
-    loadEmployeeTabData();
-    initializeFilters('hr-employees'); //  <-- التصحيح هنا
-}
-        if (targetPageId === 'page-requests-review') loadRequestsReviewPage();
-        if (targetPageId === 'page-hiring') loadHiringPage();
-        if (targetPageId === 'page-penalties') {
-    loadPenaltiesPage();
-    initializeFilters('penalties'); // تهيئة الفلاتر عند فتح الصفحة
-}
-        if (targetPageId === 'page-coverage-requests') loadCoverageRequestsPage();
-        if (targetPageId === 'page-directives-ops') loadOpsDirectivesPage();
-        if (targetPageId === 'page-my-directives') loadMyDirectivesPage();
-        if (targetPageId === 'page-my-visits') loadMyVisitsPage();
-        if (targetPageId === 'page-my-schedule') loadMySchedulePage();
-        if (targetPageId === 'page-ops-review-requests') {
-            loadOpsReviewRequestsPage();
-        }
-        if (targetPageId === 'page-announcements') loadAnnouncementsPage();
-        if (targetPageId === 'page-supervisor-schedules') loadSupervisorSchedulesPage();
-        if (targetPageId === 'page-supervisor-permission-requests') loadSupervisorPermissionRequestsPage();
-        if (targetPageId === 'page-supervisor-applications') {
-            loadSupervisorApplicationsPage();
-            pageRefreshInterval = setInterval(loadSupervisorApplicationsPage, 60000);
-        }
-        if (targetPageId === 'page-ops-nominees') loadOpsNomineesPage();
-        if (targetPageId === 'page-admin-dashboard') loadAdminDashboardPage();
-        if (targetPageId === 'page-supervisor-coverage-apps') loadSupervisorCoverageAppsPage();
-        if (targetPageId === 'page-hr-ops-hiring') loadHrOpsHiringPage();
-        if (targetPageId === 'page-user-management') loadUserManagementPage();
-        if (targetPageId === 'page-attendance-management') {
-    loadAttendanceManagementPage();
-    initializeFilters('hr-attmgmt'); // تهيئة الفلاتر عند فتح الصفحة
-}
-        if (targetPageId === 'page-finance-coverage') loadFinanceCoveragePage();
-        if (targetPageId === 'page-official-holidays') loadHolidaysPage();
-        if (targetPageId === 'page-operations-requests') loadOperationsRequestsPage();
-        if (targetPageId === 'page-my-profile') loadMyProfilePage();
-        if (targetPageId === 'page-leave-requests') loadLeaveRequests();
-        if (targetPageId === 'page-requests-archive') loadArchivePage('leave');
-        if (targetPageId === 'page-resignation-requests') loadResignationRequests();
-        if (targetPageId === 'page-loan-requests') loadLoanRequests();
-        if (targetPageId === 'page-hr-attendance-log') {
-    loadHrAttendanceLogPage();
-    initializeFilters('hr-attlog'); // تهيئة الفلاتر عند فتح الصفحة
-}
-        if (targetPageId === 'page-payroll') {
-    document.getElementById('payroll-results-container').innerHTML = '<p style="text-align: center;">الرجاء اختيار الشهر والضغط على "توليد المسير" لعرض البيانات.</p>';
-    initializeFilters('hr-payroll');// تهيئة الفلاتر عند فتح الصفحة لأول مرة
-}
-        if (targetPageId === 'page-hr-data-entry') {
-            document.getElementById('import-results-container').innerHTML = '';
-        }
-
-        if (targetPageId === 'page-my-requests') {
-            loadMyRequestsPage();
-        }
-
-        if (targetPageId === 'page-permission-requests') {
-            loadPermissionRequests();
+        const href = this.getAttribute('href');
+        if (href !== window.location.pathname) {
+            history.pushState(null, '', href);
+            handleRouteChange();
         }
     });
 });
+
+window.addEventListener('popstate', () => handleRouteChange());
+// ==========================================================
+// ===                 نهاية الاستبدال الكامل                  ===
+// ==========================================================
 // ==========================================================
 // ===    نهاية الاستبدال الكامل لمنطق التنقل بين الصفحات    ===
 // ==========================================================
