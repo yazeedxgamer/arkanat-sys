@@ -32,3 +32,15 @@ self.addEventListener('notificationclick', function(event) {
     event.notification.close();
     event.waitUntil(clients.openWindow(event.notification.data.url));
 });
+
+// بداية الإضافة: منطق التحديث الفوري
+self.addEventListener('message', event => {
+  if (event.data && event.data.action === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
+self.addEventListener('activate', event => {
+  event.waitUntil(self.clients.claim());
+});
+// نهاية الإضافة
