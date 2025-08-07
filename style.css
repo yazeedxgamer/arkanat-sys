@@ -3248,3 +3248,38 @@ body {
 /* ===                   نهاية الإضافة                   === */
 /* ======================================================= */
 /* نهاية الاستبدال */
+/* بداية الإضافة */
+/* ======================================================= */
+/* ===   تنسيقات مخصصة لعلامات الخريطة (بداية/نهاية)    === */
+/* ======================================================= */
+
+.map-marker-icon {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 36px;
+    height: 36px;
+    color: white;
+    border-radius: 50% 50% 50% 0; /* شكل قطرة الماء */
+    transform: rotate(-45deg);
+    border: 2px solid white;
+    box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+}
+
+.map-marker-icon i {
+    transform: rotate(45deg); /* إعادة تدوير الأيقونة للوضع الصحيح */
+    font-size: 20px;
+}
+
+.marker-start {
+    background-color: #16a34a; /* أخضر */
+}
+
+.marker-end {
+    background-color: #dc2626; /* أحمر */
+}
+/* نهاية الاستبدال */
+.marker-stop {
+    background-color: #8b5cf6; /* بنفسجي */
+    border-color: #7c3aed;
+}
