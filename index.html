@@ -194,29 +194,29 @@
 
         <div class="filter-group">
             <label>بحث بالاسم أو الهوية</label>
-            <input type="text" id="hr-filter-search-penalties" class="hr-filter-control-penalties" placeholder="ابحث...">
+            <input type="text" id="hr-filter-search-penalties" class="hr-filter-control" placeholder="ابحث...">
         </div>
         <div class="filter-group">
             <label>المنطقة</label>
-            <select id="hr-filter-region-penalties" class="hr-filter-control-penalties cascading-filter" data-target="hr-filter-city-penalties">
+            <select id="hr-filter-region-penalties" class="hr-filter-control cascading-filter" data-target="hr-filter-city-penalties">
                 <option value="">كل المناطق</option>
             </select>
         </div>
         <div class="filter-group">
             <label>المدينة</label>
-            <select id="hr-filter-city-penalties" class="hr-filter-control-penalties cascading-filter" data-target="hr-filter-project-penalties" disabled>
+            <select id="hr-filter-city-penalties" class="hr-filter-control cascading-filter" data-target="hr-filter-project-penalties" disabled>
                 <option value="">اختر منطقة أولاً</option>
             </select>
         </div>
         <div class="filter-group">
             <label>المشروع</label>
-            <select id="hr-filter-project-penalties" class="hr-filter-control-penalties cascading-filter" data-target="hr-filter-location-penalties" disabled>
+            <select id="hr-filter-project-penalties" class="hr-filter-control cascading-filter" data-target="hr-filter-location-penalties" disabled>
                 <option value="">اختر مدينة أولاً</option>
             </select>
         </div>
         <div class="filter-group">
             <label>الموقع</label>
-            <select id="hr-filter-location-penalties" class="hr-filter-control-penalties" disabled>
+            <select id="hr-filter-location-penalties" class="hr-filter-control" disabled>
                 <option value="">اختر مشروعاً أولاً</option>
             </select>
         </div>
@@ -572,7 +572,26 @@
     </div>
 
     <div id="contract-import-results-container" style="margin-bottom: 30px;"></div>
-
+<div class="report-filters-card" style="margin-bottom: 20px;">
+    <div class="filter-grid" style="grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));">
+        <div class="filter-group">
+            <label>بحث باسم العميل (المشروع)</label>
+            <input type="text" id="contract-filter-search" class="contract-filter-control" placeholder="اكتب اسم العميل للبحث...">
+        </div>
+        <div class="filter-group">
+            <label>فلترة حسب المنطقة</label>
+            <select id="contract-filter-region" class="contract-filter-control cascading-filter-contracts" data-target="contract-filter-city">
+                <option value="">كل المناطق</option>
+            </select>
+        </div>
+        <div class="filter-group">
+            <label>فلترة حسب المدينة</label>
+            <select id="contract-filter-city" class="contract-filter-control" disabled>
+                <option value="">اختر منطقة أولاً</option>
+            </select>
+        </div>
+    </div>
+</div>
     <div id="contracts-list-container">
         <p style="text-align: center;">جاري تحميل العقود...</p>
     </div>
@@ -754,17 +773,21 @@
     </div>
     <div class="report-filters-card" style="margin-bottom: 20px;">
     <div class="filter-grid" style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));">
-        <div class="form-group">
+        <div class="filter-group">
+    <label>بحث بالاسم أو الهوية</label>
+    <input type="text" id="hr-filter-search-attlog" class="hr-filter-control" placeholder="ابحث...">
+        </div>
+        <div class="filter-group">
             <label>من تاريخ</label>
-            <input type="date" id="att-log-date-from" class="hr-filter-control-attlog">
+            <input type="date" id="att-log-date-from" class="hr-filter-control">
         </div>
-        <div class="form-group">
+        <div class="filter-group">
             <label>إلى تاريخ</label>
-            <input type="date" id="att-log-date-to" class="hr-filter-control-attlog">
+            <input type="date" id="att-log-date-to" class="hr-filter-control">
         </div>
-        <div class="form-group">
+        <div class="filter-group">
             <label>الحالة</label>
-            <select id="att-log-status" class="hr-filter-control-attlog">
+            <select id="hr-filter-status-attlog" class="hr-filter-control">
                 <option value="">الكل</option>
                 <option value="حاضر">حاضر</option>
                 <option value="اكمل المناوبة">أكمل المناوبة</option>
@@ -772,27 +795,27 @@
                 <option value="غياب">غياب</option>
             </select>
         </div>
-        <div class="form-group">
+        <div class="filter-group">
             <label>المنطقة</label>
-            <select id="hr-filter-region-attlog" class="hr-filter-control-attlog cascading-filter" data-target="hr-filter-city-attlog">
+            <select id="hr-filter-region-attlog" class="hr-filter-control cascading-filter" data-target="hr-filter-city-attlog">
                 <option value="">كل المناطق</option>
             </select>
         </div>
-        <div class="form-group">
+        <div class="filter-group">
             <label>المدينة</label>
-            <select id="hr-filter-city-attlog" class="hr-filter-control-attlog cascading-filter" data-target="hr-filter-project-attlog" disabled>
+            <select id="hr-filter-city-attlog" class="hr-filter-control cascading-filter" data-target="hr-filter-project-attlog" disabled>
                 <option value="">اختر منطقة أولاً</option>
             </select>
         </div>
-        <div class="form-group">
+        <div class="filter-group">
             <label>المشروع</label>
-            <select id="hr-filter-project-attlog" class="hr-filter-control-attlog cascading-filter" data-target="hr-filter-location-attlog" disabled>
+            <select id="hr-filter-project-attlog" class="hr-filter-control cascading-filter" data-target="hr-filter-location-attlog" disabled>
                 <option value="">اختر مدينة أولاً</option>
             </select>
         </div>
-        <div class="form-group">
+        <div class="filter-group">
             <label>الموقع</label>
-            <select id="hr-filter-location-attlog" class="hr-filter-control-attlog" disabled>
+            <select id="hr-filter-location-attlog" class="hr-filter-control" disabled>
                 <option value="">اختر مشروعاً أولاً</option>
             </select>
         </div>
@@ -809,38 +832,49 @@
     <div class="report-filters-card" style="margin-bottom: 20px;">
     <div class="filter-grid" style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));">
         <div class="filter-group">
+    <label>الحالة</label>
+    <select id="hr-filter-status-attmgmt" class="hr-filter-control">
+        <option value="">الكل</option>
+        <option value="حاضر">حاضر</option>
+        <option value="اكمل المناوبة">أكمل المناوبة</option>
+        <option value="انسحاب">انسحاب</option>
+        <option value="غياب">غياب</option>
+        <option value="استئذان">استئذان</option>
+    </select>
+        </div>
+        <div class="filter-group">
             <label>بحث بالاسم أو الهوية</label>
-            <input type="text" id="hr-filter-search-attmgmt" class="hr-filter-control-attmgmt" placeholder="ابحث...">
+            <input type="text" id="hr-filter-search-attmgmt" class="hr-filter-control" placeholder="ابحث...">
         </div>
         <div class="filter-group">
             <label>من تاريخ</label>
-            <input type="date" id="hr-filter-date-from-attmgmt" class="hr-filter-control-attmgmt">
+            <input type="date" id="hr-filter-date-from-attmgmt" class="hr-filter-control">
         </div>
         <div class="filter-group">
             <label>إلى تاريخ</label>
-            <input type="date" id="hr-filter-date-to-attmgmt" class="hr-filter-control-attmgmt">
+            <input type="date" id="hr-filter-date-to-attmgmt" class="hr-filter-control">
         </div>
         <div class="filter-group">
             <label>المنطقة</label>
-            <select id="hr-filter-region-attmgmt" class="hr-filter-control-attmgmt cascading-filter" data-target="hr-filter-city-attmgmt">
+            <select id="hr-filter-region-attmgmt" class="hr-filter-control cascading-filter" data-target="hr-filter-city-attmgmt">
                 <option value="">كل المناطق</option>
             </select>
         </div>
         <div class="filter-group">
             <label>المدينة</label>
-            <select id="hr-filter-city-attmgmt" class="hr-filter-control-attmgmt cascading-filter" data-target="hr-filter-project-attmgmt" disabled>
+            <select id="hr-filter-city-attmgmt" class="hr-filter-control cascading-filter" data-target="hr-filter-project-attmgmt" disabled>
                 <option value="">اختر منطقة أولاً</option>
             </select>
         </div>
         <div class="filter-group">
             <label>المشروع</label>
-            <select id="hr-filter-project-attmgmt" class="hr-filter-control-attmgmt cascading-filter" data-target="hr-filter-location-attmgmt" disabled>
+            <select id="hr-filter-project-attmgmt" class="hr-filter-control cascading-filter" data-target="hr-filter-location-attmgmt" disabled>
                 <option value="">اختر مدينة أولاً</option>
             </select>
         </div>
         <div class="filter-group">
             <label>الموقع</label>
-            <select id="hr-filter-location-attmgmt" class="hr-filter-control-attmgmt" disabled>
+            <select id="hr-filter-location-attmgmt" class="hr-filter-control" disabled>
                 <option value="">اختر مشروعاً أولاً</option>
             </select>
         </div>
@@ -868,19 +902,19 @@
         </div>
         <div class="filter-group">
             <label>المنطقة</label>
-            <select id="hr-filter-region-payroll" class="hr-filter-control-payroll cascading-filter" data-target="hr-filter-city-payroll">
+            <select id="hr-filter-region-payroll" class="hr-filter-control cascading-filter" data-target="hr-filter-city-payroll">
                 <option value="">كل المناطق</option>
             </select>
         </div>
         <div class="filter-group">
             <label>المدينة</label>
-            <select id="hr-filter-city-payroll" class="hr-filter-control-payroll cascading-filter" data-target="hr-filter-project-payroll" disabled>
+            <select id="hr-filter-city-payroll" class="hr-filter-control cascading-filter" data-target="hr-filter-project-payroll" disabled>
                 <option value="">اختر منطقة أولاً</option>
             </select>
         </div>
         <div class="filter-group">
             <label>المشروع</label>
-            <select id="hr-filter-project-payroll" class="hr-filter-control-payroll cascading-filter" data-target="hr-filter-location-payroll" disabled>
+            <select id="hr-filter-project-payroll" class="hr-filter-control cascading-filter" data-target="hr-filter-location-payroll" disabled>
                 <option value="">اختر مدينة أولاً</option>
             </select>
         </div>
@@ -1635,7 +1669,7 @@
             </div>
             <div class="form-group">
                     <label>الوردية الحالية</label>
-                    <input type="text" id="employee-shift-display" placeholder="تُملأ تلقائياً بعد اختيار الشاغر" readonly style="background-color: #e9ecef; text-align: center;">
+                    <input type="text" id="employee-shift-display" placeholder="سيتم عرض معلومات الشاغر هنا" readonly style="background-color: #e9ecef; text-align: center;">
                 </div>
 
             <div class="form-group hidden" id="employee-shift-group">
@@ -2101,6 +2135,9 @@
                     <option value="انسحاب">انسحاب</option>
                     <option value="غياب">غياب</option>
                     <option value="استئذان">استئذان</option>
+                    <option value="غياب (تم تغطيته)">غياب (تم تغطيته)</option>
+                    <option value="انسحاب (تم تغطيته)">انسحاب (تم تغطيته)</option>
+                    <option value="استئذان (تم تغطيته)">استئذان (تم تغطيته)</option>
                 </select>
             </div>
             <div class="form-grid">
