@@ -596,16 +596,58 @@
             <div><h4 id="hr-stats-gap">0</h4><p>العجز الحالي</p></div>
         </div>
     </div>
+
+    <div class="report-filters-card" style="margin-bottom: 20px;">
+        <div class="filter-grid" style="grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));">
+            <div class="filter-group">
+                <label>المنطقة</label>
+                <select id="vc-filter-region" class="vc-filter-control cascading-filter-vc" data-target="vc-filter-city">
+                    <option value="">كل المناطق</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>المدينة</label>
+                <select id="vc-filter-city" class="vc-filter-control cascading-filter-vc" data-target="vc-filter-project" disabled>
+                    <option value="">اختر منطقة</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>المشروع</label>
+                <select id="vc-filter-project" class="vc-filter-control cascading-filter-vc" data-target="vc-filter-location" disabled>
+                    <option value="">اختر مدينة</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>الموقع</label>
+                <select id="vc-filter-location" class="vc-filter-control" disabled>
+                    <option value="">اختر مشروعاً</option>
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>حالة الشاغر</label>
+                <select id="vc-filter-status" class="vc-filter-control">
+                    <option value="">الكل</option>
+                    <option value="open">مفتوح</option>
+                    <option value="closed_assigned">مغلق (معين عليه موظف)</option>
+                    <option value="closed_empty">مغلق (فارغ)</option>
+                </select>
+            </div>
+        </div>
+    </div>
+
     <div class="table-container" style="margin-top: 30px;">
         <div class="table-header">
-    <h3>قائمة الشواغر</h3>
-    <div style="display: flex; gap: 10px;">
-        <button id="view-available-slots-btn" class="btn btn-success">
-            <i class="ph-bold ph-user-plus"></i> عرض الشواغر المتاحة بالعقود
-        </button>
-        <button id="add-vacancy-btn" class="btn btn-primary"><i class="ph-bold ph-plus"></i> إضافة شاغر جديد</button>
-    </div>
-</div>
+            <h3>قائمة الشواغر</h3>
+            <div style="display: flex; gap: 10px;">
+                <button id="export-vacancies-btn" class="btn btn-success">
+                    <i class="ph-bold ph-file-xls"></i> تصدير Excel
+                </button>
+                <button id="view-available-slots-btn" class="btn btn-success">
+                    <i class="ph-bold ph-user-plus"></i> عرض الشواغر المتاحة بالعقود
+                </button>
+                <button id="add-vacancy-btn" class="btn btn-primary"><i class="ph-bold ph-plus"></i> إضافة شاغر جديد</button>
+            </div>
+        </div>
         <div id="vacancies-list-container">
             <p style="text-align: center;">جاري تحميل الشواغر...</p>
         </div>
