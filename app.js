@@ -943,6 +943,7 @@ let guardAttendanceSubscription = null; // متغير لتخزين اشتراك 
 let statsInterval = null; // متغير لتخزين مؤقت تحديث الإحصائيات
 let pageRefreshInterval = null; // مؤقت لتحديث الصفحات تلقائياً
 let hrDebounceTimer; // مؤقت لتأخير البحث في صفحة الموظفين
+let updateCheckInterval = null; // مؤقت للتحقق الدوري من التحديثات
 let activeSubscription = null; // للاحتفاظ بالاشتراك المباشر الفعال
 // بداية الإضافة
 let patrolWatcherId = null; // متغير لتخزين معرّف عملية تتبع الجولة
@@ -2741,7 +2742,7 @@ async function fetchContracts() {
 async function loadAttendancePage() {
     const attendanceContent = document.querySelector('#page-attendance');
     attendanceContent.innerHTML = `
-        <div class="page-header"><h3>.تسجيل الحضور والانصراف</h3></div>
+        <div class="page-header"><h3>تسجيل الحضور والانصراف..</h3></div>
         <div class="attendance-card">
             <div id="attendance-status" class="attendance-status-text"><p>جاري التحقق من حالتك...</p></div>
             <div id="attendance-actions">
@@ -6073,10 +6074,19 @@ document.addEventListener('DOMContentLoaded', function() {
 let refreshing = false;
 // بداية الإضافة: التحقق من التحديثات عند العودة للتطبيق
 document.addEventListener('visibilitychange', () => {
-    // التحقق إذا كانت الصفحة قد أصبحت مرئية
     if (document.visibilityState === 'visible') {
-        console.log('App brought back to foreground, checking for updates...');
+        // عند العودة للتطبيق: أوقف التحقق الدوري وقم بفحص فوري
+        if (updateCheckInterval) {
+            clearInterval(updateCheckInterval);
+            updateCheckInterval = null;
+        }
+        console.log('App is visible. Running immediate update check.');
         checkForUpdates();
+    } else {
+        // عند مغادرة التطبيق: ابدأ التحقق الدوري كل 5 دقائق
+        console.log('App is hidden. Starting periodic update check.');
+        if (updateCheckInterval) clearInterval(updateCheckInterval); // أوقف أي مؤقت قديم أولاً
+        updateCheckInterval = setInterval(checkForUpdates, 300000); // 300000ms = 5 minutes
     }
 });
 // نهاية الإضافة
