@@ -77,7 +77,7 @@
         <li data-role="ادارة الموارد البشرية"><a href="#" data-page="page-leave-requests"><i class="ph-fill ph-calendar-blank"></i><span>طلبات الإجازات</span></a></li>
         <li data-role="ادارة الموارد البشرية"><a href="#" data-page="page-resignation-requests"><i class="ph-fill ph-file-x"></i><span>طلبات الاستقالات</span></a></li>
         <li data-role="ادارة الموارد البشرية"><a href="#" data-page="page-loan-requests"><i class="ph-fill ph-hand-coins"></i><span>طلبات السلف</span></a></li>
-        <li data-role="ادارة الموارد البشرية"><a href="#" data-page="page-hr-attendance-log"><i class="ph-fill ph-user-list-checks"></i><span>سجل الحضور</span></a></li>
+        <li data-role="ادارة الموارد البشرية,ادارة العمليات"><a href="#" data-page="page-hr-attendance-log"><i class="ph-fill ph-user-list-checks"></i><span>سجل الحضور</span></a></li>
         <li data-role="مدير النظام,ادارة الموارد البشرية"><a href="#" data-page="page-attendance-management"><i class="ph-fill ph-user-gear"></i><span>إدارة الحضور</span></a></li>
         <li data-role="ادارة الموارد البشرية"><a href="#" data-page="page-requests-archive"><i class="ph-fill ph-archive"></i><span>أرشيف الطلبات</span></a></li>
         <li data-role="حارس أمن"><a href="#statistics" data-page="page-attendance"><i class="ph-fill ph-timer"></i><span>الحضور و الانصراف</span></a></li>
@@ -614,6 +614,10 @@
             <i class="ph-bold ph-warning-circle"></i>
             <div><h4 id="hr-stats-gap">0</h4><p>العجز الحالي</p></div>
         </div>
+        <div class="stat-card-mini" style="--stat-color: #f59e0b;">
+    <i class="ph-bold ph-question"></i>
+    <div><h4 id="hr-stats-closed-empty">0</h4><p>تنبيه: شواغر مغلقة وفارغة</p></div>
+    </div>
     </div>
 
     <div class="report-filters-card" style="margin-bottom: 20px;">
@@ -894,11 +898,11 @@
     <div class="filter-grid" style="grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));">
         <div class="filter-group">
             <label for="payroll-start-date">من تاريخ</label>
-            <input type="date" id="payroll-start-date" class="hr-filter-control-payroll">
+            <input type="date" id="payroll-start-date" class="hr-filter-control">
         </div>
         <div class="filter-group">
             <label for="payroll-end-date">إلى تاريخ</label>
-            <input type="date" id="payroll-end-date" class="hr-filter-control-payroll">
+            <input type="date" id="payroll-end-date" class="hr-filter-control">
         </div>
         <div class="filter-group">
             <label>المنطقة</label>
@@ -920,7 +924,7 @@
         </div>
         <div class="filter-group">
             <label>الموقع</label>
-            <select id="hr-filter-location-payroll" class="hr-filter-control-payroll" disabled>
+            <select id="hr-filter-location-payroll" class="hr-filter-control" disabled>
                 <option value="">اختر مشروعاً أولاً</option>
             </select>
         </div>
