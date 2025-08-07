@@ -50,7 +50,28 @@ function formatGregorianDateTime(dateInput) {
         return 'غير محدد';
     }
 }
-
+// بداية الإضافة: دالة للتحقق من وجود تحديثات جديدة للنظام
+function checkForUpdates() {
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistration().then(reg => {
+            if (reg) {
+                // اطلب من المتصفح التحقق من وجود نسخة جديدة من السيرفر
+                reg.update();
+                // استمع لوجود نسخة جديدة في وضع الانتظار
+                reg.addEventListener('updatefound', () => {
+                    const newWorker = reg.installing;
+                    newWorker.addEventListener('statechange', () => {
+                        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                            // أرسل رسالة للعامل الجديد ليقوم بتفعيل نفسه
+                            newWorker.postMessage({ action: 'SKIP_WAITING' });
+                        }
+                    });
+                });
+            }
+        });
+    }
+}
+// نهاية الإضافة
 // ==========================================================
 // ===     بداية الإضافة: دالة حساب وقت الوردية القادمة      ===
 // ==========================================================
@@ -6048,7 +6069,24 @@ async function fetchStatistics() {
 
 document.addEventListener('DOMContentLoaded', function() {
 
-
+// بداية الإضافة: إعادة تحميل الصفحة بعد تفعيل التحديث
+let refreshing = false;
+// بداية الإضافة: التحقق من التحديثات عند العودة للتطبيق
+document.addEventListener('visibilitychange', () => {
+    // التحقق إذا كانت الصفحة قد أصبحت مرئية
+    if (document.visibilityState === 'visible') {
+        console.log('App brought back to foreground, checking for updates...');
+        checkForUpdates();
+    }
+});
+// نهاية الإضافة
+navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (!refreshing) {
+        window.location.reload();
+        refreshing = true;
+    }
+});
+// نهاية الإضافة
 // --- منطق صفحة استيراد العقود ---
 // --- منطق صفحة استيراد العقود ---
 const importContractsBtn = document.getElementById('import-contracts-btn');
@@ -11269,6 +11307,7 @@ if (loginForm) {
             const firstVisibleLink = document.querySelector('.sidebar-nav li[style*="display: block"] a');
             if (firstVisibleLink) firstVisibleLink.click();
             displayActiveAnnouncements();
+            checkForUpdates(); // التحقق من وجود تحديثات جديدة للنظام
         }
 
         loginBtn.disabled = false;
