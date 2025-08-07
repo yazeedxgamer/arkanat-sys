@@ -3283,3 +3283,126 @@ body {
     background-color: #8b5cf6; /* بنفسجي */
     border-color: #7c3aed;
 }
+/* ================================================================ */
+/* ===         بداية الإضافة: تصميم احترافي لحقول النماذج         === */
+/* ================================================================ */
+
+/* --- 1. النمط العام لجميع حقول الإدخال والاختيار --- */
+.modal-body .form-group input:not([type="checkbox"]),
+.modal-body .form-group select,
+.modal-body .form-group textarea,
+.filter-group input,
+.filter-group select {
+    appearance: none; /* إزالة المظهر الافتراضي للمتصفح */
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    background-color: #ffffff; /* خلفية بيضاء نظيفة */
+    border: 1px solid #d1d5db; /* حدود رمادية أكثر وضوحاً */
+    border-radius: 8px; /* زوايا دائرية */
+    padding: 12px 15px; /* حشوة داخلية مريحة */
+    font-family: 'Cairo', sans-serif; /* ضمان استخدام الخط الصحيح */
+    font-size: 1rem;
+    width: 100%;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease; /* تأثيرات انتقال ناعمة */
+    color: var(--text-primary);
+    background-clip: padding-box; /* مهم لظهور أيقونة الخلفية بشكل صحيح */
+}
+
+/* --- 2. تغيير شكل الحقل عند التركيز عليه (النقر داخله) --- */
+.modal-body .form-group input:focus,
+.modal-body .form-group select:focus,
+.modal-body .form-group textarea:focus,
+.filter-group input:focus,
+.filter-group select:focus {
+    outline: none; /* إزالة المخطط الافتراضي */
+    border-color: var(--accent-color); /* تغيير لون الحدود إلى الأزرق */
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2); /* إضافة توهج أزرق خفيف */
+}
+
+/* --- 3. تصميم خاص بالقوائم المنسدلة (select) --- */
+.modal-body .form-group select,
+.filter-group select {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+    background-position: left 0.75rem center; /* موقع السهم على اليسار (RTL) */
+    background-repeat: no-repeat;
+    background-size: 1.25em 1.25em;
+    padding-right: 15px; /* مساحة للنص */
+    padding-left: 2.5rem; /* مساحة للسهم المخصص */
+}
+
+/* --- 4. تصميم خاص بحقول التاريخ (input[type=date]) --- */
+.modal-body .form-group input[type="date"],
+.filter-group input[type="date"] {
+    position: relative;
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke-width='1.5' stroke='%236b7280' class='w-6 h-6'%3e%3cpath stroke-linecap='round' stroke-linejoin='round' d='M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0h18M-9.75 12h13.5' /%3e%3c/svg%3e");
+    background-position: left 0.75rem center;
+    background-repeat: no-repeat;
+    background-size: 1.25em 1.25em;
+    padding-left: 2.5rem;
+}
+
+/* إخفاء أيقونة التقويم الافتراضية في متصفحات Webkit (مثل كروم) */
+.modal-body .form-group input[type="date"]::-webkit-calendar-picker-indicator,
+.filter-group input[type="date"]::-webkit-calendar-picker-indicator {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    color: transparent;
+    cursor: pointer;
+}
+
+/* --- 5. تعديل بسيط على حقول القراءة فقط لتبدو أفضل --- */
+.modal-body .form-group input:read-only,
+.modal-body .form-group input:disabled {
+    background-color: #f3f4f6;
+    color: #6b7280;
+    cursor: not-allowed;
+}
+
+/* ================================================================ */
+/* ===                  نهاية الإضافة                          === */
+/* ================================================================ */
+/* ======================================================== */
+/* === بداية الإضافة: تنسيق خاص لسجلات الانصراف التلقائي === */
+/* ======================================================== */
+
+/* 1. لون خلفية مميز للصف بالكامل في الجدول */
+tr.auto-checkout-row td {
+    background-color: #fffbe6 !important; /* لون أصفر فاتح للخلفية */
+    color: #b45309 !important; /* لون بني داكن للنص */
+    font-weight: 600 !important;
+}
+
+/* 2. تنسيق خاص لكلمة "انصراف تلقائي" (status badge) */
+.status.auto-checkout {
+    background-color: #fef9c3; /* أصفر فاتح */
+    color: #854d0e; /* بني داكن */
+    border: 1px solid #fde68a;
+}
+
+/* 3. تنسيق خاص لتاريخ الحضور الحقيقي */
+.real-checkin-date {
+    display: block;
+    font-size: 0.8rem;
+    color: #b45309;
+    font-weight: normal;
+}
+/* ======================================================== */
+/* ===                   نهاية الإضافة                   === */
+/* ======================================================== */
+/* ======================================================== */
+/* ===   بداية الإضافة: تنسيق خاص لحالات "تم تغطيته"     === */
+/* ======================================================== */
+
+.status.covered {
+    background-color: #eef2ff; /* لون أزرق فاتح */
+    color: #4338ca;    /* لون أزرق داكن */
+    border: 1px solid #c7d2fe;
+}
+
+/* ======================================================== */
+/* ===                   نهاية الإضافة                   === */
+/* ======================================================== */
