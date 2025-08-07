@@ -60,13 +60,23 @@ function formatGregorianDateTime(dateInput) {
  * @returns {object | null} - كائن يحتوي على تفاصيل الوقت المتبقي أو null
  */
 function calculateNextShift(schedule) {
-    if (!schedule || !schedule.days || !schedule.start_time || !schedule.end_time) return null;
+    if (!schedule || !schedule.days) return null;
+
+    // --- منطق التوافقية للتعامل مع الشكل القديم والجديد للورديات ---
+    let firstPeriod = null;
+    if (schedule.periods && schedule.periods.length > 0) {
+        firstPeriod = schedule.periods[0]; // الشكل الجديد
+    } else if (schedule.start_time) {
+        firstPeriod = schedule; // الشكل القديم
+    }
+
+    if (!firstPeriod || !firstPeriod.start_time || !firstPeriod.end_time) return null;
 
     const dayMap = { 'Sun': 0, 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6 };
     const workDays = schedule.days.map(day => dayMap[day]);
-    const [startHours, startMinutes] = schedule.start_time.split(':').map(Number);
-    const [endHours, endMinutes] = schedule.end_time.split(':').map(Number);
-    
+    const [startHours, startMinutes] = firstPeriod.start_time.split(':').map(Number);
+    const [endHours, endMinutes] = firstPeriod.end_time.split(':').map(Number);
+
     const now = new Date();
     let nextShiftStartDate = null;
 
@@ -97,13 +107,11 @@ function calculateNextShift(schedule) {
             }
         }
     }
-    
+
     if (!nextShiftStartDate) return null;
 
-    // حساب وقت النهاية
     const nextShiftEndDate = new Date(nextShiftStartDate);
     nextShiftEndDate.setHours(endHours, endMinutes, 0, 0);
-    // التعامل مع الورديات الليلية التي تنتهي في اليوم التالي
     if (nextShiftEndDate <= nextShiftStartDate) {
         nextShiftEndDate.setDate(nextShiftEndDate.getDate() + 1);
     }
@@ -122,7 +130,7 @@ function calculateNextShift(schedule) {
 
     const dayName = nextShiftStartDate.toLocaleDateString('ar-SA', { weekday: 'long' });
     const timeAMPM = nextShiftStartDate.toLocaleTimeString('ar-SA', { hour: 'numeric', minute: '2-digit', hour12: true });
-    
+
     return {
         nextShiftStartDate: nextShiftStartDate,
         nextShiftEndDate: nextShiftEndDate,
