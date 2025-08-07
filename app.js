@@ -2742,7 +2742,7 @@ async function fetchContracts() {
 async function loadAttendancePage() {
     const attendanceContent = document.querySelector('#page-attendance');
     attendanceContent.innerHTML = `
-        <div class="page-header"><h3>تسجيل الحضور والانصراف</h3></div>
+        <div class="page-header"><h3>تسجيل الحضور والانصراف..</h3></div>
         <div class="attendance-card">
             <div id="attendance-status" class="attendance-status-text"><p>جاري التحقق من حالتك...</p></div>
             <div id="attendance-actions">
