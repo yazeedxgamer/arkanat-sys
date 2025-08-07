@@ -1780,17 +1780,25 @@ function renderAttendanceTable(container, records, coverageData, showActions) {
         if (!record.users) return;
 
         const user = record.users;
-        const shift = user.job_vacancies?.schedule_details?.[0];
+        const shiftDetails = user.job_vacancies?.schedule_details?.[0];
         const checkinDate = new Date(record.created_at);
         const checkoutDate = record.checkout_at ? new Date(record.checkout_at) : null;
 
-        // --- المنطق الجديد والمحسن للتعرف على الانصراف التلقائي ---
+        // --- منطق التوافقية للتعامل مع الشكل القديم والجديد للورديات ---
+        let shiftPeriod = null;
+        if (shiftDetails) {
+            if (shiftDetails.periods && shiftDetails.periods.length > 0) {
+                shiftPeriod = shiftDetails.periods[0]; // الشكل الجديد
+            } else if (shiftDetails.start_time) {
+                shiftPeriod = shiftDetails; // الشكل القديم
+            }
+        }
+
         let isAutoCheckout = false;
         if (record.status === 'اكمل المناوبة' && checkoutDate) {
             if (checkinDate.toDateString() !== checkoutDate.toDateString()) {
                 const durationHours = (checkoutDate - checkinDate) / (1000 * 60 * 60);
-                const scheduledHours = shift?.work_hours || 8; // القيمة الافتراضية 8 ساعات إذا لم تكن الوردية محددة
-                // الشرط الجديد: هل المدة الفعلية أكبر من المجدولة بفارق 4 ساعات على الأقل؟
+                const scheduledHours = shiftPeriod?.work_hours || 8;
                 if (durationHours > (scheduledHours + 4)) {
                     isAutoCheckout = true;
                 }
@@ -1832,7 +1840,7 @@ function renderAttendanceTable(container, records, coverageData, showActions) {
                 <td>${formatGregorianDateTime(checkoutDate || checkinDate)}</td>
                 <td>${user.name}</td>
                 <td>${projectDisplay} / ${user.location || 'غير محدد'}</td>
-                <td>${shift ? `${shift.name || 'وردية'} (${formatTimeAMPM(shift.start_time)} - ${formatTimeAMPM(shift.end_time)})` : 'غير محددة'}</td>
+                <td>${shiftPeriod ? `${shiftDetails.name || 'وردية'} (${formatTimeAMPM(shiftPeriod.start_time)} - ${formatTimeAMPM(shiftPeriod.end_time)})` : 'غير محددة'}</td>
                 <td>${formatGregorianDateTime(record.created_at)}</td>
                 <td>${record.checkout_at ? formatGregorianDateTime(record.checkout_at) : '-'}</td>
                 <td>${durationHtml}</td>
@@ -1846,6 +1854,7 @@ function renderAttendanceTable(container, records, coverageData, showActions) {
     tableHtml += '</tbody></table></div>';
     container.innerHTML = tableHtml;
 }
+
 // ==========================================================
 // ===                    نهاية الإضافة                   ===
 // ==========================================================
@@ -2733,22 +2742,34 @@ async function loadAttendancePage() {
         }
         const schedule = userWithVacancy.job_vacancies.schedule_details?.[0];
 
+        // --- منطق التوافقية للتعامل مع الشكل القديم والجديد للورديات ---
+        let shiftPeriod = null;
+        if (schedule) {
+            if (schedule.periods && schedule.periods.length > 0) {
+                shiftPeriod = schedule.periods[0]; // الشكل الجديد
+            } else if (schedule.start_time) {
+                shiftPeriod = schedule; // الشكل القديم
+            }
+        }
+
         if (latestRecord && (latestRecord.status === 'استئذان' || latestRecord.status.includes('انسحاب'))) {
             const shiftEndTime = new Date(latestRecord.checkout_at);
-            const [endHours, endMinutes] = schedule.end_time.split(':').map(Number);
-            shiftEndTime.setHours(endHours, endMinutes, 0, 0);
-            if (shiftEndTime < new Date(latestRecord.created_at)) shiftEndTime.setDate(shiftEndTime.getDate() + 1);
+            if(shiftPeriod) {
+                const [endHours, endMinutes] = shiftPeriod.end_time.split(':').map(Number);
+                shiftEndTime.setHours(endHours, endMinutes, 0, 0);
+                if (shiftEndTime < new Date(latestRecord.created_at)) shiftEndTime.setDate(shiftEndTime.getDate() + 1);
 
-            if (new Date() < shiftEndTime) {
-                const lockoutTitle = latestRecord.status === 'استئذان' ? 'تم قبول استئذانك' : 'تم تسجيل انسحابك';
-                statusText.innerHTML = `
-                    <div class="lockout-message">
-                        <h4>${lockoutTitle}</h4>
-                        <p>يمكنك تسجيل حضورك مرة أخرى مع بداية ورديتك القادمة.</p>
-                        <small>في حال كان هذا الإجراء خاطئاً، يرجى التواصل مع مشرفك المباشر.</small>
-                    </div>`;
-                stopPersistentTracking();
-                return;
+                if (new Date() < shiftEndTime) {
+                    const lockoutTitle = latestRecord.status === 'استئذان' ? 'تم قبول استئذانك' : 'تم تسجيل انسحابك';
+                    statusText.innerHTML = `
+                        <div class="lockout-message">
+                            <h4>${lockoutTitle}</h4>
+                            <p>يمكنك تسجيل حضورك مرة أخرى مع بداية ورديتك القادمة.</p>
+                            <small>في حال كان هذا الإجراء خاطئاً، يرجى التواصل مع مشرفك المباشر.</small>
+                        </div>`;
+                    stopPersistentTracking();
+                    return;
+                }
             }
         }
 
@@ -2762,39 +2783,47 @@ async function loadAttendancePage() {
         } else {
             stopPersistentTracking();
 
-            // --- المنطق الجديد والمحسن للتعامل مع الورديات الليلية ---
             let shiftIsActiveNow = false;
-            if (schedule) {
+            if (schedule) { // نستخدم schedule الذي يحتوي على الهيكل الكامل
                 const now = new Date();
                 const todayKey = now.toLocaleString('en-US', { weekday: 'short' });
                 const yesterday = new Date();
                 yesterday.setDate(now.getDate() - 1);
                 const yesterdayKey = yesterday.toLocaleString('en-US', { weekday: 'short' });
 
-                const [startHours, startMinutes] = schedule.start_time.split(':').map(Number);
-                const [endHours, endMinutes] = schedule.end_time.split(':').map(Number);
-                const isOvernight = schedule.end_time < schedule.start_time;
+                const periods = schedule.periods || [schedule]; // تعامل مع كلا الشكلين
+                for (const period of periods) {
+                    const [startHours, startMinutes] = period.start_time.split(':').map(Number);
+                    const [endHours, endMinutes] = period.end_time.split(':').map(Number);
+                    const isOvernight = period.end_time < period.start_time;
 
-                const isTimeActive = (startDate, endDate) => {
-                    const gracePeriodStart = new Date(startDate.getTime() - 15 * 60000);
-                    return now >= gracePeriodStart && now < endDate;
-                };
+                    const isTimeActive = (startDate, endDate) => {
+                        const gracePeriodStart = new Date(startDate.getTime() - 15 * 60000);
+                        return now >= gracePeriodStart && now < endDate;
+                    };
 
-                if (schedule.days.includes(todayKey)) {
-                    const shiftStartDate = new Date(now);
-                    shiftStartDate.setHours(startHours, startMinutes, 0, 0);
-                    const shiftEndDate = new Date(now);
-                    shiftEndDate.setHours(endHours, endMinutes, 0, 0);
-                    if (isOvernight) shiftEndDate.setDate(shiftEndDate.getDate() + 1);
-                    if (isTimeActive(shiftStartDate, shiftEndDate)) shiftIsActiveNow = true;
-                }
+                    if (schedule.days.includes(todayKey)) {
+                        const shiftStartDate = new Date(now);
+                        shiftStartDate.setHours(startHours, startMinutes, 0, 0);
+                        const shiftEndDate = new Date(now);
+                        shiftEndDate.setHours(endHours, endMinutes, 0, 0);
+                        if (isOvernight) shiftEndDate.setDate(shiftEndDate.getDate() + 1);
+                        if (isTimeActive(shiftStartDate, shiftEndDate)) {
+                            shiftIsActiveNow = true;
+                            break;
+                        }
+                    }
 
-                if (!shiftIsActiveNow && isOvernight && schedule.days.includes(yesterdayKey)) {
-                    const shiftStartDate = new Date(yesterday);
-                    shiftStartDate.setHours(startHours, startMinutes, 0, 0);
-                    const shiftEndDate = new Date(now);
-                    shiftEndDate.setHours(endHours, endMinutes, 0, 0);
-                    if (isTimeActive(shiftStartDate, shiftEndDate)) shiftIsActiveNow = true;
+                    if (!shiftIsActiveNow && isOvernight && schedule.days.includes(yesterdayKey)) {
+                        const shiftStartDate = new Date(yesterday);
+                        shiftStartDate.setHours(startHours, startMinutes, 0, 0);
+                        const shiftEndDate = new Date(now);
+                        shiftEndDate.setHours(endHours, endMinutes, 0, 0);
+                        if (isTimeActive(shiftStartDate, shiftEndDate)) {
+                            shiftIsActiveNow = true;
+                            break;
+                        }
+                    }
                 }
             }
 
@@ -3529,38 +3558,36 @@ async function loadMySchedulePage() {
             .eq('id', currentUser.id)
             .single();
 
-        if (error) throw error; // Rethrow actual errors to be caught below
+        if (error) throw error;
 
         const dayTranslations = { Sun: 'الأحد', Mon: 'الاثنين', Tue: 'الثلاثاء', Wed: 'الأربعاء', Thu: 'الخميس', Fri: 'الجمعة', Sat: 'السبت' };
         const weekDaysOrder = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
         const weeklySchedule = {};
         let locationLink = null;
 
-        // --- بداية المنطق الكامل لجميع أنواع الموظفين ---
         if (currentUser.employment_status === 'اساسي') {
-            if (!userWithVacancy?.job_vacancies?.schedule_details?.[0]) throw new Error('لم يتم تعيين وردية عمل لك.');
-            const schedule = userWithVacancy.job_vacancies.schedule_details[0];
-            weekDaysOrder.forEach(day => {
-                if (schedule.days.includes(day)) {
-                    weeklySchedule[day] = {
-                        startTime: schedule.start_time,
-                        endTime: schedule.end_time,
-                        details: `${userWithVacancy.job_vacancies.project || ''} - ${userWithVacancy.job_vacancies.specific_location || ''}`
-                    };
-                }
+            const schedule = userWithVacancy?.job_vacancies?.schedule_details?.[0];
+            if (!schedule) throw new Error('لم يتم تعيين وردية عمل لك.');
+            const periods = schedule.periods || [schedule]; // تعامل مع كلا الشكلين
+            
+            schedule.days.forEach(day => {
+                weeklySchedule[day] = {
+                    periods: periods,
+                    details: `${userWithVacancy.job_vacancies.project || ''} - ${userWithVacancy.job_vacancies.specific_location || ''}`
+                };
             });
         } else if (currentUser.employment_status === 'بديل راحة') {
             if (!currentUser.project || !currentUser.location) throw new Error('أنت غير معين على موقع حالياً، لا يمكن إنشاء جدول ديناميكي.');
             const { data: primaryGuards, error: guardsError } = await supabaseClient.from('users').select('name, job_vacancies!inner!users_vacancy_id_fkey(schedule_details)').in('project', currentUser.project).eq('location', currentUser.location).eq('employment_status', 'اساسي');
             if (guardsError) throw guardsError;
             primaryGuards.forEach(guard => {
-                const shift = guard.job_vacancies?.schedule_details?.[0];
-                if (shift && shift.days) {
-                    const offDays = weekDaysOrder.filter(day => !shift.days.includes(day));
+                const shiftDetails = guard.job_vacancies?.schedule_details?.[0];
+                if (shiftDetails && shiftDetails.days) {
+                    const periods = shiftDetails.periods || [shiftDetails]; // تعامل مع كلا الشكلين
+                    const offDays = weekDaysOrder.filter(day => !shiftDetails.days.includes(day));
                     offDays.forEach(day => {
                         weeklySchedule[day] = {
-                            startTime: shift.start_time,
-                            endTime: shift.end_time,
+                            periods: periods,
                             details: `تغطية لـ: ${guard.name}`
                         };
                     });
@@ -3568,21 +3595,18 @@ async function loadMySchedulePage() {
             });
         } else if (currentUser.employment_status === 'تغطية') {
             const { data: assignment, error: assignmentError } = await supabaseClient.from('coverage_applicants').select('coverage_shifts(*)').eq('applicant_user_id', currentUser.id).in('status', ['ops_final_approved', 'hr_approved']).limit(1).single();
-            if (assignmentError || !assignment) throw new Error('لم يتم العثور على وردية تغطية معينة لك حالياً.');
+            if (assignmentError || !assignment) throw new Error('لم يتم العور على وردية تغطية معينة لك حالياً.');
             const shift = assignment.coverage_shifts;
             const shiftDate = new Date(shift.created_at);
             const dayKey = shiftDate.toLocaleString('en-US', { weekday: 'short' });
             if (weekDaysOrder.includes(dayKey)) {
                 weeklySchedule[dayKey] = {
-                    startTime: shift.start_time,
-                    endTime: shift.end_time,
+                    periods: [{ start_time: shift.start_time, end_time: shift.end_time }],
                     details: `تغطية في: ${shift.project}`
                 };
             }
         }
-        // --- نهاية المنطق الكامل ---
-
-        // --- منطق تحديد رابط الموقع ---
+        
         const vacancy = userWithVacancy.job_vacancies;
         const contract = vacancy?.contracts;
         if (contract && contract.contract_locations) {
@@ -3596,11 +3620,10 @@ async function loadMySchedulePage() {
                     locationLink = `geo:${coords}?q=${coords}`;
                 } else {
                     locationLink = `https://www.google.com/maps?q=${coords}`;
-                }
+                }    
             }
         }
         
-        // --- بناء الواجهة النهائية ---
         const todayIndex = new Date().getDay();
         let scheduleHtml = '<div class="schedule-week-grid">';
         weekDaysOrder.forEach((dayKey, index) => {
@@ -3608,7 +3631,8 @@ async function loadMySchedulePage() {
             const dayData = weeklySchedule[dayKey];
             scheduleHtml += `<div class="schedule-day-card ${isCurrentDay}"><h4>${dayTranslations[dayKey]}</h4>`;
             if (dayData) {
-                scheduleHtml += `<div class="details"><p class="time">${formatTimeAMPM(dayData.startTime)} - ${formatTimeAMPM(dayData.endTime)}</p><p>${dayData.details}</p></div>`;
+                const periodsHtml = dayData.periods.map(p => `<p class="time">${formatTimeAMPM(p.start_time)} - ${formatTimeAMPM(p.end_time)}</p>`).join('');
+                scheduleHtml += `<div class="details">${periodsHtml}<p>${dayData.details}</p></div>`;
             } else {
                 scheduleHtml += `<div class="details"><p class="rest-day"><i class="ph-fill ph-coffee"></i> راحة</p></div>`;
             }
@@ -4474,6 +4498,19 @@ async function loadVacancyTabData() {
         if (vacanciesError) throw vacanciesError;
 
         const { data: assignedUsers, error: assignedUsersError } = await supabaseClient.from('users').select('id, name, vacancy_id').not('vacancy_id', 'is', null);
+        // بداية الإضافة: حساب الشواغر المغلقة والفارغة
+        const assignedVacancyIds = new Set(assignedUsers.map(u => u.vacancy_id));
+        const closedEmptyCount = vacancies.filter(v => v.status === 'closed' && !assignedVacancyIds.has(v.id)).length;
+        const closedEmptyCounter = document.getElementById('hr-stats-closed-empty');
+        closedEmptyCounter.textContent = closedEmptyCount;
+        if (closedEmptyCount > 0) {
+        closedEmptyCounter.classList.add('highlight'); // إضافة كلاس التوهج
+        } else {
+        closedEmptyCounter.classList.remove('highlight'); // إزالة كلاس التوهج
+        }
+
+
+// نهاية الإضافة
         if (assignedUsersError) throw assignedUsersError;
 
         // --- 3. الفلترة المتقدمة حسب الحالة ---
@@ -4495,7 +4532,15 @@ async function loadVacancyTabData() {
 
         requiredEl.textContent = totalRequired;
         assignedEl.textContent = totalAssigned;
-        gapEl.textContent = totalRequired - totalAssigned;
+        // بداية الاستبدال
+        const gapValue = totalRequired - totalAssigned;
+        gapEl.textContent = gapValue;
+        if (gapValue > 0) {
+        gapEl.classList.add('highlight-red'); // إضافة كلاس التوهج الأحمر
+        } else {
+        gapEl.classList.remove('highlight-red'); // إزالة كلاس التوهج
+        }
+// نهاية الاستبدال
 
         // --- 5. تجهيز بيانات التصدير والجدول ---
         vacanciesExportData = finalVacancies.map(vacancy => {
@@ -5180,6 +5225,9 @@ async function loadHrAttendanceLogPage() {
             .select(`*, users!inner(name, region, project, location, city, job_vacancies!users_vacancy_id_fkey(schedule_details))`)
             .order('created_at', { ascending: false });
 
+            if (currentUser.role === 'ادارة العمليات' && currentUser.region) {
+    query = query.eq('users.region', currentUser.region);
+}
         if (!hasActiveFilters) {
             query = query.limit(100); // عرض آخر 100 سجل إذا لم تكن هناك فلاتر
         }
@@ -6298,7 +6346,7 @@ navLinks.forEach(link => {
 }
         if (targetPageId === 'page-payroll') {
     document.getElementById('payroll-results-container').innerHTML = '<p style="text-align: center;">الرجاء اختيار الشهر والضغط على "توليد المسير" لعرض البيانات.</p>';
-    iinitializeFilters('hr-payroll'); // تهيئة الفلاتر عند فتح الصفحة لأول مرة
+    initializeFilters('hr-payroll');// تهيئة الفلاتر عند فتح الصفحة لأول مرة
 }
         if (targetPageId === 'page-hr-data-entry') {
             document.getElementById('import-results-container').innerHTML = '';
