@@ -50,27 +50,7 @@ function formatGregorianDateTime(dateInput) {
         return 'غير محدد';
     }
 }
-// بداية الإضافة: دالة للتحقق من وجود تحديثات جديدة للنظام
-function checkForUpdates() {
-    if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.getRegistration().then(reg => {
-            if (reg) {
-                // اطلب من المتصفح التحقق من وجود نسخة جديدة من السيرفر
-                reg.update();
-                // استمع لوجود نسخة جديدة في وضع الانتظار
-                reg.addEventListener('updatefound', () => {
-                    const newWorker = reg.installing;
-                    newWorker.addEventListener('statechange', () => {
-                        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                            // أرسل رسالة للعامل الجديد ليقوم بتفعيل نفسه
-                            newWorker.postMessage({ action: 'SKIP_WAITING' });
-                        }
-                    });
-                });
-            }
-        });
-    }
-}
+
 // نهاية الإضافة
 // ==========================================================
 // ===     بداية الإضافة: دالة حساب وقت الوردية القادمة      ===
@@ -962,7 +942,25 @@ function formatTimeAMPM(timeString) {
     return `${h}:${m} ${ampm}`;
 }
 // نهاية الإضافة
-
+// بداية الإضافة
+function checkForUpdates() {
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.getRegistration().then(reg => {
+            if (reg) {
+                reg.update();
+                reg.addEventListener('updatefound', () => {
+                    const newWorker = reg.installing;
+                    newWorker.addEventListener('statechange', () => {
+                        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                            newWorker.postMessage({ action: 'SKIP_WAITING' });
+                        }
+                    });
+                });
+            }
+        });
+    }
+}
+// نهاية الإضافة
 // بداية الإضافة: دالة إرسال الإشعارات الشاملة
 
 /**
@@ -6067,9 +6065,35 @@ async function fetchStatistics() {
 // ------------------------------------
 // =========================================================================
 // --- هذا الكود يحل محل كل الكود التفاعلي في نهاية الملف ---
+// بداية الإضافة
+navigator.serviceWorker.addEventListener('controllerchange', () => {
+    sessionStorage.setItem('update_in_progress', 'true');
+    window.location.reload();
+});
+// نهاية الإضافة
+// بداية الإضافة
 
+document.addEventListener('visibilitychange', () => {
+    if (sessionStorage.getItem('update_in_progress')) return;
+
+    if (document.visibilityState === 'visible') {
+        if (updateCheckInterval) {
+            clearInterval(updateCheckInterval);
+            updateCheckInterval = null;
+        }
+        checkForUpdates();
+    } else {
+        if (updateCheckInterval) clearInterval(updateCheckInterval);
+        updateCheckInterval = setInterval(checkForUpdates, 300000); // كل 5 دقائق
+    }
+});
+// نهاية الإضافة
 document.addEventListener('DOMContentLoaded', async function() {
-
+// بداية الإضافة: تنظيف علامة التحديث عند تحميل الصفحة
+if (sessionStorage.getItem('update_in_progress')) {
+    sessionStorage.removeItem('update_in_progress');
+}
+// نهاية الإضافة
 
 // --- منطق صفحة استيراد العقود ---
 // --- منطق صفحة استيراد العقود ---
@@ -6188,43 +6212,38 @@ if (menuBtn) {
     // --- NEW: Check for existing session ---
     // --- NEW: Check for existing session ---
     // بداية اللصق
-const { data: { session } } = await supabaseClient.auth.getSession();
+// بداية الاستبدال
+    const { data: { session } } = await supabaseClient.auth.getSession();
 
-if (session && session.user) {
-    // إذا وجدنا جلسة فعالة من Supabase
-    const { data: userProfile, error: profileError } = await supabaseClient
-        .from('users')
-        .select('*')
-        .eq('auth_user_id', session.user.id)
-        .single();
+    if (session && session.user) {
+        const { data: userProfile, error: profileError } = await supabaseClient
+            .from('users')
+            .select('*')
+            .eq('auth_user_id', session.user.id)
+            .single();
 
-    if (userProfile) {
-        currentUser = userProfile;
-        sessionStorage.setItem('currentUser', JSON.stringify(userProfile));
+        if (userProfile) {
+            currentUser = userProfile;
+            sessionStorage.setItem('currentUser', JSON.stringify(userProfile));
 
-        updateUIVisibility(currentUser.role);
-        document.getElementById('login-page').style.display = 'none';
-        document.querySelector('.dashboard-container').classList.remove('hidden');
+            updateUIVisibility(currentUser.role);
+            document.getElementById('login-page').style.display = 'none';
+            document.querySelector('.dashboard-container').classList.remove('hidden');
 
-        const userProfileSpan = document.querySelector('.user-profile span');
-        if (userProfileSpan) userProfileSpan.textContent = `مرحباً، ${currentUser.name}`;
+            const userProfileSpan = document.querySelector('.user-profile span');
+            if (userProfileSpan) userProfileSpan.textContent = `مرحباً، ${currentUser.name}`;
 
-        displayActiveAnnouncements();
+            displayActiveAnnouncements();
 
-        // تشغيل الراوتر لعرض الصفحة الصحيحة من الرابط
-        handleRouteChange(true);
-    } else {
-        // يوجد جلسة ولكن لا يوجد ملف تعريف، قم بتسجيل الخروج
-        await supabaseClient.auth.signOut();
+            handleRouteChange(true);
+        } else {
+            await supabaseClient.auth.signOut();
+        }
     }
-}
+// نهاية الاستبدال
 // نهاية اللصق
     // --- END: Check for existing session ---
 
-    // --- 1. منطق التنقل بين الصفحات ---
-    const navLinks = document.querySelectorAll('.sidebar-nav a');
-    const pageContents = document.querySelectorAll('.page-content');
-    const mainTitle = document.getElementById('main-title');
 
     // ==================== بداية الاستبدال ====================
 // ==========================================================
@@ -6249,7 +6268,11 @@ async function refreshCurrentUser() {
 // ==========================================================
 // ===       بداية الاستبدال: نظام الروابط والتنقل المطور       ===
 // ==========================================================
-
+// بداية الإضافة
+const navLinks = document.querySelectorAll('.sidebar-nav a');
+const pageContents = document.querySelectorAll('.page-content');
+const mainTitle = document.getElementById('main-title');
+// نهاية الإضافة
 async function refreshCurrentUser() {
     if (currentUser && currentUser.id) {
         const { data, error } = await supabaseClient.from('users').select('*').eq('id', currentUser.id).single();
