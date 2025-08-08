@@ -1,4 +1,16 @@
+// ==========================================================
+// ===      بداية الإضافة: إعادة توجيه اللوكال هوست دائماً      ===
+// ==========================================================
+const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
+// إذا كنا على اللوكال هوست والمسار ليس هو الصفحة الرئيسية
+if (isLocalhost && window.location.pathname !== '/') {
+    // قم بإعادة التوجيه إلى الصفحة الرئيسية
+    window.location.replace(window.location.origin);
+}
+// ==========================================================
+// ===                   نهاية الإضافة                   ===
+// ==========================================================
 // ==========================================================
 // ===          بداية الإضافة: دوال تنسيق التاريخ الميلادي          ===
 // ==========================================================
@@ -52,6 +64,209 @@ function formatGregorianDateTime(dateInput) {
 }
 
 // نهاية الإضافة
+    async function exportHrAttendanceLogToExcel() {
+    const exportBtn = document.getElementById('export-hr-log-btn');
+    exportBtn.disabled = true;
+    exportBtn.innerHTML = '<i class="ph-fill ph-spinner-gap animate-spin"></i> جاري التجهيز...';
+
+    try {
+        const dateFromStr = document.getElementById('att-log-date-from').value;
+        const dateToStr = document.getElementById('att-log-date-to').value;
+
+        if (!dateFromStr || !dateToStr) {
+            throw new Error('الرجاء تحديد تاريخ البداية والنهاية في الفلاتر أولاً.');
+        }
+
+        const startDate = new Date(dateFromStr);
+        const endDate = new Date(dateToStr);
+
+        let usersQuery = supabaseClient.from('users')
+            .select(`id, name, region, project, location, city, job_vacancies!users_vacancy_id_fkey(schedule_details)`)
+            .eq('role', 'حارس أمن');
+
+        const region = document.getElementById('hr-filter-region-attlog').value;
+        const city = document.getElementById('hr-filter-city-attlog').value;
+        const project = document.getElementById('hr-filter-project-attlog').value;
+        const location = document.getElementById('hr-filter-location-attlog').value;
+        const searchVal = document.getElementById('hr-filter-search-attlog').value;
+
+        if (searchVal) usersQuery = usersQuery.or(`name.ilike.%${searchVal}%`);
+        if (region) usersQuery = usersQuery.eq('region', region);
+        if (city) usersQuery = usersQuery.eq('city', city);
+        if (project) usersQuery = usersQuery.filter('project', 'cs', `{${project}}`);
+        if (location) usersQuery = usersQuery.eq('location', location);
+
+        const { data: filteredGuards, error: guardsError } = await usersQuery;
+        if (guardsError) throw guardsError;
+        if (filteredGuards.length === 0) throw new Error('لا يوجد حراس يطابقون الفلاتر المحددة.');
+
+        const guardIds = filteredGuards.map(g => g.id);
+
+        const { data: records, error: recordsError } = await supabaseClient.from('attendance')
+            .select(`*`)
+            .in('guard_id', guardIds)
+            .gte('created_at', startDate.toISOString())
+            .lte('created_at', new Date(new Date(dateToStr).setDate(new Date(dateToStr).getDate() + 1)).toISOString());
+        if (recordsError) throw recordsError;
+
+        const recordsMap = new Map();
+        records.forEach(rec => {
+            const dateKey = new Date(rec.created_at).toISOString().split('T')[0];
+            const mapKey = `${rec.guard_id}-${dateKey}`;
+            recordsMap.set(mapKey, rec);
+        });
+
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet('سجل الحضور', { views: [{ rightToLeft: true }] });
+
+        // --- التعديل 1: تعديل تصميم الهيدر (إنزال العناوين الأساسية سطر) ---
+        const staticHeaders = ['اسم الحارس', 'المنطقة', 'المشروع', 'الموقع', 'الوردية', 'إجمالي الغياب', 'إجمالي الاستئذان', 'إجمالي الانسحاب'];
+        const subHeaders = ['الحالة', 'الحضور', 'الانصراف', 'ملاحظات'];
+
+        const headerRow1 = worksheet.addRow([]); // صف التواريخ
+        const headerRow2 = worksheet.addRow(staticHeaders); // صف العناوين الأساسية والفرعية
+
+        staticHeaders.forEach((header, i) => {
+            worksheet.mergeCells(1, i + 1, 2, i + 1);
+            worksheet.getCell(1, i + 1).value = header;
+        });
+
+        const dateArray = [];
+        for (let d = new Date(dateFromStr); d <= new Date(dateToStr); d.setDate(d.getDate() + 1)) {
+            dateArray.push(new Date(d));
+        }
+
+        let currentColumn = staticHeaders.length + 1;
+        dateArray.forEach(date => {
+            const dateString = `${String(date.getDate()).padStart(2, '0')}-${String(date.getMonth() + 1).padStart(2, '0')}-${date.getFullYear()}`;
+            worksheet.mergeCells(1, currentColumn, 1, currentColumn + 3);
+            worksheet.getCell(1, currentColumn).value = dateString;
+            subHeaders.forEach((sub, i) => { worksheet.getCell(2, currentColumn + i).value = sub; });
+            currentColumn += 5;
+        });
+
+        filteredGuards.forEach(guard => {
+            const shiftDetails = guard.job_vacancies?.schedule_details?.[0];
+            let absentCount = 0, permissionCount = 0, withdrawalCount = 0;
+            const dailyStatuses = [];
+
+            dateArray.forEach(date => {
+                const dateKey = date.toISOString().split('T')[0];
+                const mapKey = `${guard.id}-${dateKey}`;
+                const attendance = recordsMap.get(mapKey);
+                let status = '';
+
+                if (attendance) {
+                    status = attendance.status;
+                    if (status === 'اكمل المناوبة') {
+                         const checkinDate = new Date(attendance.created_at);
+                         const checkoutDate = attendance.checkout_at ? new Date(attendance.checkout_at) : null;
+                         if(checkoutDate && ((checkoutDate - checkinDate) / (1000 * 60 * 60) > ((shiftDetails?.work_hours || 8) + 4))) {
+                            status = 'انصراف تلقائي';
+                         }
+                    }
+                } else {
+                    const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
+                    status = shiftDetails?.days?.includes(dayName) ? 'غياب' : 'راحة';
+                }
+                dailyStatuses.push(status);
+                if (status.includes('غياب')) absentCount++;
+                if (status.includes('استئذان')) permissionCount++;
+                if (status.includes('انسحاب')) withdrawalCount++;
+            });
+
+            const projectNameClean = String(guard.project || '').replace(/[\[\]"]/g, '');
+
+            const rowData = [guard.name, guard.region, projectNameClean, guard.location, createShiftTimeLabel(shiftDetails), absentCount, permissionCount, withdrawalCount];
+
+            dateArray.forEach((date, index) => {
+                const dateKey = date.toISOString().split('T')[0];
+                const mapKey = `${guard.id}-${dateKey}`;
+                const attendance = recordsMap.get(mapKey);
+
+                if (attendance) {
+                    rowData.push(dailyStatuses[index], formatTimeAMPM(new Date(attendance.created_at).toTimeString().substring(0, 5)), attendance.checkout_at ? formatTimeAMPM(new Date(attendance.checkout_at).toTimeString().substring(0, 5)) : '-', attendance.notes || '-', '');
+                } else {
+                    // --- التعديل 2: تغيير "غياب" إلى "لا يوجد" للأيام بدون سجلات ---
+                    const status = dailyStatuses[index];
+                     if (status === 'غياب') {
+                         rowData.push('لا يوجد', '-', '-', '-', '');
+                     } else { // راحة
+                         rowData.push('راحة', '-', '-', '-', '');
+                     }
+                }
+            });
+            worksheet.addRow(rowData);
+        });
+
+        // --- التعديل 3: تعديل وتوسيع قائمة الألوان ---
+        const statusColors = {
+            'حاضر': 'FFC6EFCE', // أخضر
+            'اكمل المناوبة': 'FFC7DFFF', // سماوي
+            'انصراف تلقائي': 'FFE9D5FF', // بنفسجي فاتح
+            'غياب': 'FFFFC7CE', // أحمر
+            'لا يوجد': 'FFFFF8E1', // بيج فاتح
+            'انسحاب': 'FFFFE0B2', // برتقالي
+            'انسحاب (انصراف مبكر)': 'FFFFE0B2',
+            'استئذان': 'FFFFEB9C', // أصفر
+            'راحة': 'FFF1F5F9', // رمادي فاتح جداً
+        };
+
+        const mainHeaderStyle = { font: { bold: true, color: { argb: 'FFFFFFFF' }, name: 'Cairo', size: 11 }, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF002060' } }, alignment: { horizontal: 'center', vertical: 'middle' }, border: { top: { style: 'thin' }, left: { style: 'thin' }, bottom: { style: 'thin' }, right: { style: 'thin' } } };
+        const dateHeaderStyle = { ...mainHeaderStyle, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF4A5568' } } };
+        const subHeaderStyle = { ...mainHeaderStyle, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF3b82f6' } } };
+        const delimiterHeaderStyle = { ...subHeaderStyle, fill: { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF6b7280' } } };
+
+        worksheet.getRow(1).eachCell(cell => Object.assign(cell, mainHeaderStyle));
+        worksheet.getRow(2).eachCell(cell => { if(cell.value) Object.assign(cell, mainHeaderStyle) });
+
+        for(let i = 0; i < dateArray.length; i++) {
+            const col = staticHeaders.length + 1 + (i*5);
+            worksheet.getCell(1, col).style = dateHeaderStyle;
+            for (let j=0; j<4; j++) { worksheet.getCell(2, col + j).style = subHeaderStyle; }
+            worksheet.getCell(2, col).style = delimiterHeaderStyle;
+            worksheet.getCell(2, col+3).style = delimiterHeaderStyle;
+        }
+
+        worksheet.eachRow((row, rowNumber) => {
+            if (rowNumber > 2) {
+                for (let i = 0; i < dateArray.length; i++) {
+                    const dayStartCol = staticHeaders.length + 1 + (i * 5);
+                    const statusCell = row.getCell(dayStartCol);
+                    const statusValue = statusCell.value;
+                    const color = statusColors[statusValue];
+                    if (color) {
+                        const fillStyle = { type: 'pattern', pattern: 'solid', fgColor: { argb: color } };
+                        for (let j = 0; j < 4; j++) {
+                            row.getCell(dayStartCol + j).fill = fillStyle;
+                        }
+                    }
+                }
+            }
+        });
+
+        worksheet.columns.forEach(column => { column.width = 15; column.alignment = { horizontal: 'center', vertical: 'middle' }; });
+        worksheet.getColumn(1).width = 25;
+        for (let i = 0; i < dateArray.length; i++) {
+            const spacerColIndex = staticHeaders.length + (i * 5) + 5;
+            worksheet.getColumn(spacerColIndex).width = 3;
+        }
+
+        const buffer = await workbook.xlsx.writeBuffer();
+        const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = `سجل_الحضور_${dateFromStr}_الى_${dateToStr}.xlsx`;
+        link.click();
+
+    } catch (error) {
+        alert('حدث خطأ أثناء التصدير: ' + error.message);
+        console.error(error);
+    } finally {
+        exportBtn.disabled = false;
+        exportBtn.innerHTML = '<i class="ph-bold ph-file-xls"></i> تصدير Excel';
+    }
+}
 // ==========================================================
 // ===     بداية الإضافة: دالة حساب وقت الوردية القادمة      ===
 // ==========================================================
@@ -931,6 +1146,7 @@ let patrolWatcherId = null; // متغير لتخزين معرّف عملية ت�
 let payrollExportData = []; // لتخزين بيانات مسير الرواتب الجاهزة للتصدير
 let vacanciesExportData = []; // لتخزين بيانات الشواغر المفلترة الجاهزة للتصدير
 // بداية الإضافة: أضف هذا الكود في ملف app.js
+// بداية الاستبدال
 function formatTimeAMPM(timeString) {
     if (!timeString) return 'غير محدد';
     const [hours, minutes] = timeString.split(':');
@@ -938,9 +1154,35 @@ function formatTimeAMPM(timeString) {
     const ampm = h >= 12 ? 'م' : 'ص';
     h = h % 12;
     h = h ? h : 12; // الساعة 0 أو 12 تبقى 12
-    const m = minutes.padStart(2, '0');
+    const m = String(minutes).padStart(2, '0');
     return `${h}:${m} ${ampm}`;
 }
+
+function createShiftTimeLabel(shift) {
+    if (!shift) return '(غير محدد)';
+
+    // الحالة 1: هيكل الورديات الجديد (مع مصفوفة الفترات)
+    if (shift.periods && Array.isArray(shift.periods) && shift.periods.length > 0) {
+        const periodsText = shift.periods.map(period => {
+            const startTime = formatTimeAMPM(period.start_time);
+            const endTime = formatTimeAMPM(period.end_time);
+            return `${startTime} - ${endTime}`;
+        }).join(' و '); // الربط باستخدام "و"
+        return `(${periodsText})`;
+    }
+
+    // الحالة 2: الهيكل القديم (للتوافقية)
+    if (shift.start_time && shift.end_time) {
+        const startTime = formatTimeAMPM(shift.start_time);
+        const endTime = formatTimeAMPM(shift.end_time);
+        return `(${startTime} - ${endTime})`;
+    }
+
+    // في حال عدم وجود أي بيانات وقت صالحة
+    return '(وقت غير محدد)';
+}
+// نهاية الاستبدال
+// نهاية الإضافة
 // نهاية الإضافة
 // بداية الإضافة
 function checkForUpdates() {
@@ -1475,18 +1717,15 @@ async function loadGuardAttendancePage() {
             .eq('role', 'حارس أمن')
             .in('employment_status', ['اساسي', 'تغطية', 'بديل راحة']);
 
-        // تطبيق فلاتر الصلاحيات أولاً
         if (currentUser.role === 'مشرف') {
             query = createProjectFilter(query, currentUser.project, 'project');
         } else if (currentUser.role === 'ادارة العمليات') {
             query = query.eq('region', currentUser.region);
         }
 
-        // تطبيق فلاتر الواجهة على استعلام قاعدة البيانات
         if (searchVal) query = query.or(`name.ilike.%${searchVal}%,id_number.ilike.%${searchVal}%`);
         if (regionVal) query = query.eq('region', regionVal);
         if (cityVal) query = query.eq('city', cityVal);
-        // --- هذا هو السطر الذي تم تصحيحه ---
         if (projectVal) query = query.filter('project', 'ov', `{${JSON.stringify(projectVal)}}`);
         if (locationVal) query = query.eq('location', locationVal);
 
@@ -1494,12 +1733,13 @@ async function loadGuardAttendancePage() {
         if (guardsError) throw guardsError;
 
         const yesterday = new Date(Date.now() - 36 * 60 * 60 * 1000).toISOString();
-        const { data: attendanceRecords, error: attendanceError } = await supabaseClient.from('attendance').select('guard_id, created_at, status').gte('created_at', yesterday);
+        const { data: attendanceRecords, error: attendanceError } = await supabaseClient.from('attendance').select('guard_id, created_at, status, checkout_at').gte('created_at', yesterday);
         if (attendanceError) throw attendanceError;
 
         const now = new Date();
-
-        // --- 3. حساب الإحصائيات العامة (بناءً على نتائج البحث الأولية من قاعدة البيانات) ---
+        
+        // --- 3. حساب الإحصائيات العامة (هذا الجزء تمت إعادته) ---
+        // (الكود هنا مأخوذ من نسختك الحالية)
         let presentCount = 0, scheduledRightNowCount = 0, offCount = 0, absentCount = 0, withdrawalCount = 0, permissionCount = 0;
         const currentTime = now.toTimeString().substring(0, 5);
         const currentDay = now.toLocaleString('en-US', { weekday: 'short' });
@@ -1507,19 +1747,23 @@ async function loadGuardAttendancePage() {
         guards.forEach(g => {
             const shift = g.job_vacancies?.schedule_details?.[0];
             let isScheduledNow = false;
-            if (shift && shift.days && shift.days.includes(currentDay)) {
-                const startTime = shift.start_time;
-                const endTime = shift.end_time;
-                if (endTime < startTime) { isScheduledNow = (currentTime >= startTime || currentTime < endTime); }
-                else { isScheduledNow = (currentTime >= startTime && currentTime < endTime); }
-                if (isScheduledNow) scheduledRightNowCount++;
+            if (shift && shift.days) {
+                const periods = shift.periods || [shift];
+                for(const period of periods) {
+                    const startTime = period.start_time;
+                    const endTime = period.end_time;
+                    if (endTime < startTime) { isScheduledNow = (currentTime >= startTime || currentTime < endTime); }
+                    else { isScheduledNow = (currentTime >= startTime && currentTime < endTime); }
+                    if(isScheduledNow) break;
+                }
             }
+            if (isScheduledNow) scheduledRightNowCount++;
 
             let statusText = 'في راحة';
             const latestAtt = attendanceRecords.filter(att => att.guard_id === g.id).sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
 
             if (latestAtt) {
-                if (latestAtt.status === 'حاضر') statusText = 'حاضر';
+                if (latestAtt.status === 'حاضر' && !latestAtt.checkout_at) statusText = 'حاضر';
                 else if (latestAtt.status.includes('انسحاب')) statusText = 'انسحاب';
                 else if (latestAtt.status === 'استئذان') statusText = 'استئذان';
             } 
@@ -1540,7 +1784,6 @@ async function loadGuardAttendancePage() {
         document.getElementById('stats-guard-absent').textContent = absentCount;
         document.getElementById('stats-guard-withdrawal').textContent = withdrawalCount;
         document.getElementById('stats-guard-permission').textContent = permissionCount;
-
         let coverageQuery = supabaseClient.from('users').select('*', { count: 'exact', head: true }).eq('employment_status', 'تغطية');
         let vacancyQuery = supabaseClient.from('job_vacancies').select('*', { count: 'exact', head: true }).eq('status', 'open');
         if (currentUser.role === 'مشرف') {
@@ -1554,76 +1797,64 @@ async function loadGuardAttendancePage() {
         document.getElementById('stats-guard-coverage').textContent = coverageCount || 0;
         const { count: vacancyCount } = await vacancyQuery;
         document.getElementById('stats-guard-vacancies').textContent = vacancyCount || 0;
+        // --- نهاية كود الإحصائيات ---
 
-        // --- 4. الفلترة المتقدمة (حسب الحالة والوقت) لعرض البطاقات ---
+        // --- 4. الفلترة المتقدمة وعرض البطاقات (هذا هو الكود المطور) ---
         const filteredGuards = guards.filter(guard => {
             const shift = guard.job_vacancies?.schedule_details?.[0];
-
-            if (timeFromVal && (!shift || shift.start_time < timeFromVal)) return false;
-            if (timeToVal && (!shift || !shift.start_time || shift.start_time > timeToVal)) return false;
-
-            if (statusVal) {
-                let calculatedStatus = 'في راحة';
-                const latestAttendance = attendanceRecords.filter(r => r.guard_id === guard.id).sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
-
-                if (latestAttendance) {
-                    if (latestAttendance.status === 'حاضر') calculatedStatus = 'حاضر';
-                    else if (latestAttendance.status.includes('انسحاب')) calculatedStatus = 'انسحاب';
-                    else if (latestAttendance.status === 'استئذان') calculatedStatus = 'استئذان';
-                }
-
-                if (calculatedStatus === 'في راحة' && (guard.employment_status === 'اساسي' || guard.employment_status === 'بديل راحة') && shift && shift.days && shift.days.includes(now.toLocaleString('en-US', { weekday: 'short' }))) {
-                    const startTime = new Date();
-                    const [startHours, startMinutes] = shift.start_time.split(':');
-                    startTime.setHours(startHours, startMinutes, 0, 0);
-                    if (now >= startTime) {
-                        calculatedStatus = 'غياب';
-                    } else {
-                        calculatedStatus = 'وردية قادمة';
-                    }
-                }
-                if (calculatedStatus !== statusVal) return false;
-            }
+            const firstPeriod = shift?.periods?.[0] || shift;
+            if (timeFromVal && (!firstPeriod || firstPeriod.start_time < timeFromVal)) return false;
+            if (timeToVal && (!firstPeriod || firstPeriod.start_time > timeToVal)) return false;
+            // يمكنك إضافة الفلترة بالحالة هنا مستقبلاً
             return true;
         });
 
-        // --- 5. عرض النتائج النهائية ---
         const cardsHtml = filteredGuards.map(guard => {
-            const shift = guard.job_vacancies?.schedule_details?.[0];
+            const schedule = guard.job_vacancies?.schedule_details?.[0];
             let status = { text: 'في راحة', class: 'off', time: 'ليس لديه وردية اليوم' };
             let actionButton = '';
-            const latestAttendance = attendanceRecords.filter(r => r.guard_id === guard.id).sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
 
-            if (latestAttendance) {
-                 const recordTime = formatTimeAMPM(new Date(latestAttendance.created_at).toTimeString().substring(0, 5));
-                 if (latestAttendance.status === 'حاضر') {
-                    status = { text: 'حاضر', class: 'present', time: `منذ ${recordTime}` };
-                 } else if (latestAttendance.status.includes('انسحاب')) {
-                    status = { text: latestAttendance.status, class: 'absent', time: `منذ ${recordTime}` };
-                 } else if (latestAttendance.status === 'استئذان') {
-                    status = { text: 'استئذان', class: 'permission', time: `منذ ${recordTime}` };
-                 }
-            } 
+            const latestRecord = attendanceRecords?.filter(r => r.guard_id === guard.id).sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
 
-            if (status.text === 'في راحة') { 
-                 if ((guard.employment_status === 'اساسي' || guard.employment_status === 'بديل راحة') && shift && shift.days && shift.days.includes(now.toLocaleString('en-US', { weekday: 'short' }))) {
-                    const startTime = new Date();
-                    const [startHours, startMinutes] = shift.start_time.split(':');
-                    startTime.setHours(startHours, startMinutes, 0, 0);
-                    if (now >= startTime) {
+            if (latestRecord && !latestRecord.checkout_at) {
+                const recordTime = formatTimeAMPM(new Date(latestRecord.created_at).toTimeString().substring(0, 5));
+                status = { text: 'حاضر', class: 'present', time: `منذ ${recordTime}` };
+            } else if (schedule) {
+                const periods = schedule.periods || [schedule];
+                let isScheduledToday = schedule.days.includes(now.toLocaleString('en-US', { weekday: 'short' }));
+                let nextPeriodForToday = null;
+
+                if (isScheduledToday) {
+                    for (const period of periods) {
+                        const [startHours, startMinutes] = period.start_time.split(':').map(Number);
+                        const periodStartTime = new Date();
+                        periodStartTime.setHours(startHours, startMinutes, 0, 0);
+                        if (periodStartTime > now) {
+                            nextPeriodForToday = period;
+                            break;
+                        }
+                    }
+                }
+                
+                if (latestRecord && latestRecord.checkout_at && new Date(latestRecord.checkout_at).toDateString() === now.toDateString()) {
+                    if (periods.length > 1 && nextPeriodForToday) {
+                        status = { text: 'بين الفترات', class: 'between-shifts', time: `التالية ${formatTimeAMPM(nextPeriodForToday.start_time)}` };
+                    }
+                } else if (isScheduledToday) {
+                    const firstPeriodStartTime = new Date();
+                    const [fpStartHours, fpStartMinutes] = periods[0].start_time.split(':').map(Number);
+                    firstPeriodStartTime.setHours(fpStartHours, fpStartMinutes, 0, 0);
+
+                    if (now >= firstPeriodStartTime && !latestRecord) {
                         status = { text: 'غياب', class: 'absent', time: 'لم يسجل حضور' };
                     } else {
-                        status.text = 'وردية قادمة';
-                        status.time = `تبدأ الساعة ${formatTimeAMPM(shift.start_time)}`;
+                        status = { text: 'وردية قادمة', class: 'off', time: `تبدأ ${formatTimeAMPM(periods[0].start_time)}` };
                     }
-                } else if (guard.employment_status === 'تغطية') {
-                    status.text = 'تغطية';
-                    status.time = 'في انتظار تسجيل الحضور';
                 }
             }
 
             if (status.class === 'absent') {
-                const shiftData = { absent_guard_id: guard.id, project: guard.project, location: guard.location, region: guard.region, city: guard.city, ...(shift || {}) };
+                const shiftData = { absent_guard_id: guard.id, project: guard.project, location: guard.location, region: guard.region, city: guard.city, ...(schedule || {}) };
                 if (currentUser.role === 'ادارة العمليات') {
                     actionButton = `<button class="btn btn-secondary btn-sm add-to-coverage-btn" data-shift='${JSON.stringify(shiftData)}'><i class="ph-bold ph-plus"></i> للتغطية</button>`;
                 }
@@ -1632,29 +1863,18 @@ async function loadGuardAttendancePage() {
             const directiveButton = `<button class="btn btn-secondary btn-sm open-directive-modal-btn" data-recipient-id="${guard.id}" data-recipient-name="${guard.name}" title="إرسال توجيه"><i class="ph-bold ph-paper-plane-tilt"></i> توجيه</button>`;
             const mapButton = status.class === 'present' ? `<button class="btn btn-secondary btn-sm view-on-map-btn" data-guard-id="${guard.id}" title="عرض في الخريطة"><i class="ph-bold ph-map-pin-line"></i> الخريطة</button>` : '';
             const projectDisplay = (Array.isArray(guard.project) ? guard.project.join(', ') : guard.project) || 'غير محدد';
-            const shiftTimeHtml = shift ? `<p style="color: var(--accent-color); font-weight: 700;"><i class="ph-fill ph-clock"></i> ${formatTimeAMPM(shift.start_time)} - ${formatTimeAMPM(shift.end_time)}</p>` : '';
+
+            const shiftTimeHtmlText = createShiftTimeLabel(schedule);
+            const shiftTimeHtml = schedule ? `<p style="color: var(--accent-color); font-weight: 700;"><i class="ph-fill ph-clock"></i> ${shiftTimeHtmlText}</p>` : '';
 
             return `
                 <div class="guard-card status-${status.class}">
                     <div class="guard-card-body">
-                        <div class="guard-card-info">
-                            <h4>${guard.name}</h4>
-                            <p><i class="ph-fill ph-map-pin"></i> ${projectDisplay} / ${guard.location || 'غير محدد'}</p>
-                            ${shiftTimeHtml}
-                        </div>
-                        <div class="guard-card-status">
-                            <span class="status-indicator ${status.class}"></span>
-                            <span>${status.text}</span>
-                            <span class="time" style="margin-right: auto;">${status.time}</span>
-                        </div>
+                        <div class="guard-card-info"><h4>${guard.name}</h4><p><i class="ph-fill ph-map-pin"></i> ${projectDisplay} / ${guard.location || 'غير محدد'}</p>${shiftTimeHtml}</div>
+                        <div class="guard-card-status"><span class="status-indicator ${status.class}"></span><span>${status.text}</span><span class="time" style="margin-right: auto;">${status.time}</span></div>
                     </div>
-                    <div class="guard-card-actions">
-                        ${actionButton}
-                        ${mapButton}
-                        ${directiveButton}
-                    </div>
-                </div>
-            `;
+                    <div class="guard-card-actions">${actionButton}${mapButton}${directiveButton}</div>
+                </div>`;
         }).join('');
 
         container.innerHTML = `<div class="guard-cards-grid">${cardsHtml || '<p style="text-align:center; padding: 40px; font-size: 1.2rem;">لا يوجد حراس يطابقون شروط الفلترة الحالية.</p>'}</div>`;
@@ -1812,21 +2032,11 @@ function renderAttendanceTable(container, records, coverageData, showActions) {
         const checkinDate = new Date(record.created_at);
         const checkoutDate = record.checkout_at ? new Date(record.checkout_at) : null;
 
-        // --- منطق التوافقية للتعامل مع الشكل القديم والجديد للورديات ---
-        let shiftPeriod = null;
-        if (shiftDetails) {
-            if (shiftDetails.periods && shiftDetails.periods.length > 0) {
-                shiftPeriod = shiftDetails.periods[0]; // الشكل الجديد
-            } else if (shiftDetails.start_time) {
-                shiftPeriod = shiftDetails; // الشكل القديم
-            }
-        }
-
         let isAutoCheckout = false;
         if (record.status === 'اكمل المناوبة' && checkoutDate) {
             if (checkinDate.toDateString() !== checkoutDate.toDateString()) {
                 const durationHours = (checkoutDate - checkinDate) / (1000 * 60 * 60);
-                const scheduledHours = shiftPeriod?.work_hours || 8;
+                const scheduledHours = shiftDetails?.work_hours || 8;
                 if (durationHours > (scheduledHours + 4)) {
                     isAutoCheckout = true;
                 }
@@ -1846,7 +2056,45 @@ function renderAttendanceTable(container, records, coverageData, showActions) {
         if (statusText.includes('(تم تغطيته)')) statusClass = 'covered';
 
         const rowClass = isAutoCheckout ? 'auto-checkout-row' : '';
-        const notesHtml = isAutoCheckout ? `<span style="color: red;">(يجب تنبيه الحارس)</span>` : '-';
+
+        // ==========================================================
+        // ===      بداية المنطق الجديد لتحديد ملاحظة الفترة      ===
+        // ==========================================================
+        let notesHtml = isAutoCheckout ? `<span style="color: red;">(يجب تنبيه الحارس)</span>` : '-';
+        const periods = shiftDetails?.periods || (shiftDetails ? [shiftDetails] : []);
+
+        if (periods.length > 1) { // تشغيل هذا المنطق فقط للورديات المتقطعة
+            const checkinTime = new Date(record.created_at);
+            let periodIndex = -1;
+
+            // البحث عن الفترة التي ينتمي إليها سجل الحضور هذا
+            for (let i = 0; i < periods.length; i++) {
+                const period = periods[i];
+                const periodStartTime = new Date(checkinTime);
+                const [startHours, startMinutes] = period.start_time.split(':');
+                periodStartTime.setHours(startHours, startMinutes, 0, 0);
+
+                // نعتبر أن السجل يتبع الفترة إذا كان وقت الحضور أكبر من أو يساوي وقت بدايتها
+                if (checkinTime >= periodStartTime) {
+                    periodIndex = i;
+                }
+            }
+
+            if (periodIndex !== -1) {
+                const periodNumberText = periodIndex === 0 ? 'الأولى' : (periodIndex === 1 ? 'الثانية' : `الـ${periodIndex + 1}`);
+                const periodNote = `<span style="color: #6366f1; font-weight: 600;">الفترة ${periodNumberText}</span>`;
+
+                if (notesHtml !== '-') {
+                    notesHtml += `<br>${periodNote}`; // إضافة الملاحظة بجانب الملاحظات الأخرى
+                } else {
+                    notesHtml = periodNote; // استبدال الشرطة (-) بالملاحظة
+                }
+            }
+        }
+        // ==========================================================
+        // ===                   نهاية المنطق الجديد                   ===
+        // ==========================================================
+
         const actionCell = showActions ? `<td>
             <button class="btn btn-secondary btn-sm att-mgmt-edit-btn" data-id="${record.id}" data-name="${user.name}" title="تعديل السجل">
                 <i class="ph-bold ph-pencil-simple"></i>
@@ -1862,13 +2110,14 @@ function renderAttendanceTable(container, records, coverageData, showActions) {
         }
 
         const projectDisplay = Array.isArray(user.project) ? user.project.join(', ') : (user.project || 'غير محدد');
+        const shiftTimeHtml = createShiftTimeLabel(shiftDetails);
 
         tableHtml += `
             <tr class="${rowClass}">
                 <td>${formatGregorianDateTime(checkoutDate || checkinDate)}</td>
                 <td>${user.name}</td>
                 <td>${projectDisplay} / ${user.location || 'غير محدد'}</td>
-                <td>${shiftPeriod ? `${shiftDetails.name || 'وردية'} (${formatTimeAMPM(shiftPeriod.start_time)} - ${formatTimeAMPM(shiftPeriod.end_time)})` : 'غير محددة'}</td>
+                <td>${shiftDetails ? `${shiftDetails.name || 'وردية'} ${shiftTimeHtml}` : 'غير محددة'}</td>
                 <td>${formatGregorianDateTime(record.created_at)}</td>
                 <td>${record.checkout_at ? formatGregorianDateTime(record.checkout_at) : '-'}</td>
                 <td>${durationHtml}</td>
@@ -2297,66 +2546,134 @@ async function loadVacanciesPage() {
     `;
 }
 // نهاية الإضافة
-// بداية الاستبدال للدوال المساعدة
+// ==========================================================
+// ===       بداية الدوال المساعدة الجديدة لواجهة العقود       ===
+// ==========================================================
+
+/**
+ * دالة لإنشاء كود HTML لفترة عمل واحدة (بداية ونهاية)
+ * @param {object} period - كائن يحتوي على start_time و end_time
+ * @param {number} index - ترتيب الفترة (0 للفترة الأولى)
+ * @returns {string} - كود HTML
+ */
+function createPeriodHtml(period = {}, index = 0) {
+    return `
+    <div class="shift-period-item" style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
+        <div class="form-group" style="flex: 1; margin-bottom: 0;"><label>من:</label><input type="time" class="shift-time-input shift-start-time" value="${period.start_time || ''}"></div>
+        <div class="form-group" style="flex: 1; margin-bottom: 0;"><label>إلى:</label><input type="time" class="shift-time-input shift-end-time" value="${period.end_time || ''}"></div>
+        ${index > 0 ? '<button type="button" class="delete-btn delete-period-btn" title="حذف الفترة"><i class="ph-bold ph-x"></i></button>' : '<div style="width: 34px; height: 34px;"></div>' /* عنصر فارغ للحفاظ على المحاذاة */}
+    </div>
+    `;
+}
+
+/**
+ * دالة لإنشاء كود HTML لوردية عمل كاملة (مع فتراتها)
+ * @param {object} shift - كائن يحتوي على تفاصيل الوردية
+ * @returns {string} - كود HTML
+ */
 function createShiftGroupHtml(shift = {}) {
+    const name = shift.name || '';
     const guardsCount = shift.guards_count || 1;
-    const startTime = shift.start_time || '';
-    const endTime = shift.end_time || '';
+    const workHours = shift.work_hours || 0;
     const days = shift.days || [];
-    
+    // إذا لم تكن هناك فترات، أنشئ فترة واحدة فارغة كبداية
+    const periods = (shift.periods && shift.periods.length > 0) ? shift.periods : [{ start_time: '', end_time: '' }];
+
     const dayNames = {Sat: 'السبت', Sun: 'الأحد', Mon: 'الاثنين', Tue: 'الثلاثاء', Wed: 'الأربعاء', Thu: 'الخميس', Fri: 'الجمعة'};
     const daysHtml = Object.keys(dayNames).map(dayKey => {
         const isChecked = days.includes(dayKey) ? 'checked' : '';
-        return `<label><input type="checkbox" value="${dayKey}" ${isChecked}>${dayNames[dayKey]}</label>`;
+        return `<label><input type="checkbox" value="${dayKey}" class="shift-day-checkbox" ${isChecked}>${dayNames[dayKey]}</label>`;
     }).join('');
 
+    // بناء حقول الفترات باستخدام الدالة المساعدة
+    const periodsHtml = periods.map((period, index) => createPeriodHtml(period, index)).join('');
+
     return `
-        <div class="shift-group">
-            <div class="form-group">
-                <label>عدد الحراس لهذه الوردية</label>
-                <input type="number" class="shift-guards-input" value="${guardsCount}" min="1" style="width: 150px;">
+        <div class="shift-entry-card">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <div class="form-group" style="flex-grow: 1; margin: 0;">
+                    <label>مسمى الوردية</label>
+                    <input type="text" class="shift-name" value="${name}" placeholder="مثال: وردية A">
+                </div>
+                <button type="button" class="delete-btn delete-shift-btn" title="حذف الوردية بالكامل"><i class="ph-bold ph-trash"></i></button>
             </div>
-            <div class="form-group" style="flex-grow:1;">
-                <label>أيام عمل الوردية:</label>
-                <div class="weekdays-selector">${daysHtml}</div>
+
+            <div class="form-grid" style="grid-template-columns: 1fr 1fr;">
+                <div class="form-group">
+                    <label>عدد الحراس</label>
+                    <input type="number" class="shift-guards-count" value="${guardsCount}" min="1">
+                </div>
+                <div class="form-group">
+                    <label>إجمالي ساعات العمل</label>
+                    <input type="number" class="shift-work-hours" value="${parseFloat(workHours).toFixed(2)}" readonly style="background-color: #e9ecef; text-align: center;">
+                </div>
             </div>
-            <div class="form-group">
-                <label>من:</label>
-                <input type="time" class="shift-start-time-input" value="${startTime}">
+
+            <div class="form-group" style="margin-top: 15px;">
+                <label style="display: block; margin-bottom: 5px;">فترات عمل الوردية:</label>
+                <div class="shift-periods-container">${periodsHtml}</div>
+                <button type="button" class="btn btn-secondary btn-sm add-period-btn" style="margin-top: 5px;"><i class="ph-bold ph-plus"></i> إضافة فترة أخرى</button>
             </div>
-            <div class="form-group">
-                <label>إلى:</label>
-                <input type="time" class="shift-end-time-input" value="${endTime}">
+
+            <div class="form-group" style="margin-top: 15px;">
+                <label>أيام عمل الوردية</label>
+                <div class="days-selector">${daysHtml}</div>
             </div>
-            <button class="delete-btn delete-shift-btn" title="حذف الوردية"><i class="ph-bold ph-x"></i></button>
         </div>
     `;
 }
 
-function createLocationGroupHtml(location = {}) {
-    const locationName = location.location_name || '';
+/**
+ * دالة لإنشاء كود HTML لموقع كامل (مع وردياته)
+ * @param {object} location - كائن يحتوي على تفاصيل الموقع
+ * @param {string[]} availableCities - قائمة بالمدن المتاحة للعقد
+ * @returns {string} - كود HTML
+ */
+function createLocationGroupHtml(location = {}, availableCities = []) {
+    const locationName = location.name || '';
+    // إذا لم تكن هناك ورديات، أنشئ وردية واحدة فارغة كبداية
     const shifts = location.shifts && location.shifts.length > 0 ? location.shifts : [{}];
     const shiftsHtml = shifts.map(shift => createShiftGroupHtml(shift)).join('');
-    
+    const cityOptions = availableCities.map(c => `<option value="${c}" ${c === location.city ? 'selected' : ''}>${c}</option>`).join('');
+
     return `
-        <div class="location-group">
-            <div class="location-group-header">
-                <div class="form-group" style="flex-grow:1;">
-                    <label>اسم الموقع (الفرع)</label>
-                    <input type="text" class="location-name-input" value="${locationName}" placeholder="مثال: فرع غرناطة">
+        <div class="location-entry-card">
+            <div class="location-header">
+                <div class="form-group" style="flex-grow:1; margin:0;">
+                     <label>اسم الموقع (الفرع)</label>
+                     <input type="text" class="location-name-input" value="${locationName}" placeholder="مثال: فرع غرناطة">
                 </div>
-                <button class="delete-btn delete-location-btn" title="حذف الموقع"><i class="ph-bold ph-trash"></i></button>
+                <button type="button" class="delete-btn delete-location-card-btn"><i class="ph-bold ph-trash"></i></button>
             </div>
-            <div class="shifts-section">
-                <h6>ورديات هذا الموقع:</h6>
-                <div class="shifts-container">${shiftsHtml}</div>
-                <button class="btn btn-secondary btn-sm add-shift-btn" style="margin-top:10px;">
-                    <i class="ph-bold ph-plus-circle"></i> إضافة وردية أخرى لهذا الموقع
-                </button>
+
+            <div class="form-group">
+                <label>مدينة هذا الموقع</label>
+                <select class="location-city-select">${cityOptions}</select>
             </div>
+
+            <div class="form-grid" style="grid-template-columns: 3fr 1fr; align-items: end; margin-top: 15px;">
+                <div class="form-group">
+                    <label>رابط الموقع (إحداثيات)</label>
+                    <input type="text" class="location-geofence-link" placeholder="مثال: 24.7111, 46.6800" value="${location.geofence_link || ''}">
+                </div>
+                <div class="form-group">
+                    <label>نطاق التواجد (متر)</label>
+                    <input type="number" class="location-geofence-radius" value="${location.geofence_radius || 200}">
+                </div>
+            </div>
+
+            <div class="shifts-container-for-location">${shiftsHtml}</div>
+            <button class="btn btn-secondary add-shift-to-card-btn" style="width: 100%; margin-top: 15px;">
+                <i class="ph-bold ph-plus-circle"></i> إضافة وردية أخرى لهذا الموقع
+            </button>
         </div>
     `;
 }
+
+// ==========================================================
+// ===        نهاية الدوال المساعدة الجديدة لواجهة العقود        ===
+// ==========================================================
+
 // نهاية الاستبدال
 
 async function loadMyProfilePage() {
@@ -2760,119 +3077,92 @@ async function loadAttendancePage() {
     const checkOutBtn = document.getElementById('check-out-btn');
 
     try {
-        const { data: latestRecord, error: recordError } = await supabaseClient.from('attendance').select('*').eq('guard_id', currentUser.id).order('created_at', { ascending: false }).limit(1).single();
-        if (recordError && recordError.code !== 'PGRST116') throw recordError;
-
         const { data: userWithVacancy, error: userError } = await supabaseClient.from('users').select('*, job_vacancies!users_vacancy_id_fkey(*)').eq('id', currentUser.id).single();
         if (userError || !userWithVacancy?.job_vacancies) {
             statusText.innerHTML = `<p>أنت غير معين على وردية عمل حالياً.</p>`;
             return;
         }
         const schedule = userWithVacancy.job_vacancies.schedule_details?.[0];
-
-        // --- منطق التوافقية للتعامل مع الشكل القديم والجديد للورديات ---
-        let shiftPeriod = null;
-        if (schedule) {
-            if (schedule.periods && schedule.periods.length > 0) {
-                shiftPeriod = schedule.periods[0]; // الشكل الجديد
-            } else if (schedule.start_time) {
-                shiftPeriod = schedule; // الشكل القديم
-            }
+        if (!schedule) {
+             statusText.innerHTML = `<p>لم يتم تحديد جدول عمل لك في هذا الشاغر.</p>`;
+             return;
         }
 
+        const now = new Date();
+        const todayKey = now.toLocaleString('en-US', { weekday: 'short' });
+        const yesterday = new Date(); yesterday.setDate(now.getDate() - 1);
+        
+        const { data: recentRecords, error: recordError } = await supabaseClient.from('attendance').select('*').eq('guard_id', currentUser.id).gte('created_at', yesterday.toISOString()).order('created_at', { ascending: false });
+        if (recordError) throw recordError;
+
+        const latestRecord = recentRecords?.[0];
+
+        // إذا كان المستخدم مسجلاً للخروج (انسحاب/استئذان)، اعرض رسالة القفل
         if (latestRecord && (latestRecord.status === 'استئذان' || latestRecord.status.includes('انسحاب'))) {
-            const shiftEndTime = new Date(latestRecord.checkout_at);
-            if(shiftPeriod) {
-                const [endHours, endMinutes] = shiftPeriod.end_time.split(':').map(Number);
-                shiftEndTime.setHours(endHours, endMinutes, 0, 0);
-                if (shiftEndTime < new Date(latestRecord.created_at)) shiftEndTime.setDate(shiftEndTime.getDate() + 1);
-
-                if (new Date() < shiftEndTime) {
-                    const lockoutTitle = latestRecord.status === 'استئذان' ? 'تم قبول استئذانك' : 'تم تسجيل انسحابك';
-                    statusText.innerHTML = `
-                        <div class="lockout-message">
-                            <h4>${lockoutTitle}</h4>
-                            <p>يمكنك تسجيل حضورك مرة أخرى مع بداية ورديتك القادمة.</p>
-                            <small>في حال كان هذا الإجراء خاطئاً، يرجى التواصل مع مشرفك المباشر.</small>
-                        </div>`;
-                    stopPersistentTracking();
-                    return;
-                }
-            }
+             const lockoutTitle = latestRecord.status === 'استئذان' ? 'تم قبول استئذانك' : 'تم تسجيل انسحابك';
+             statusText.innerHTML = `<div class="lockout-message"><h4>${lockoutTitle}</h4><p>يمكنك تسجيل حضورك مرة أخرى مع بداية ورديتك القادمة.</p><small>في حال كان هذا الإجراء خاطئاً، يرجى التواصل مع مشرفك المباشر.</small></div>`;
+             stopPersistentTracking();
+             return;
         }
 
+        // إذا كان المستخدم مسجلاً للدخول حالياً (لا يوجد وقت خروج)
         if (latestRecord && !latestRecord.checkout_at) {
-             const clockInTime = new Date(latestRecord.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-             statusText.innerHTML = `<p>حالتك الحالية: <strong>مسجل حضور</strong> منذ الساعة ${clockInTime}</p>`;
-             checkOutBtn.classList.remove('hidden');
-             checkOutBtn.dataset.attendanceId = latestRecord.id;
-             const { data: fullUser } = await supabaseClient.from('users').select('*, job_vacancies:job_vacancies!users_vacancy_id_fkey(*, contracts(*))').eq('id', currentUser.id).single();
-             if (fullUser?.job_vacancies) startPersistentTracking(fullUser, latestRecord.id);
-        } else {
-            stopPersistentTracking();
+            const clockInTime = new Date(latestRecord.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+            statusText.innerHTML = `<p>حالتك الحالية: <strong>مسجل حضور</strong> منذ الساعة ${clockInTime}</p>`;
+            checkOutBtn.classList.remove('hidden');
+            checkOutBtn.dataset.attendanceId = latestRecord.id;
+            const { data: fullUser } = await supabaseClient.from('users').select('*, job_vacancies:job_vacancies!users_vacancy_id_fkey(*, contracts(*))').eq('id', currentUser.id).single();
+            if (fullUser?.job_vacancies) startPersistentTracking(fullUser, latestRecord.id);
+            return; // توقف هنا لأن المستخدم مسجل دخوله بالفعل
+        }
 
-            let shiftIsActiveNow = false;
-            if (schedule) { // نستخدم schedule الذي يحتوي على الهيكل الكامل
-                const now = new Date();
-                const todayKey = now.toLocaleString('en-US', { weekday: 'short' });
-                const yesterday = new Date();
-                yesterday.setDate(now.getDate() - 1);
-                const yesterdayKey = yesterday.toLocaleString('en-US', { weekday: 'short' });
+        // إذا لم يكن مسجلاً للدخول، ابحث عن الفترة القادمة أو الحالية
+        stopPersistentTracking();
+        let periodToShowCheckIn = null;
 
-                const periods = schedule.periods || [schedule]; // تعامل مع كلا الشكلين
-                for (const period of periods) {
-                    const [startHours, startMinutes] = period.start_time.split(':').map(Number);
-                    const [endHours, endMinutes] = period.end_time.split(':').map(Number);
-                    const isOvernight = period.end_time < period.start_time;
+        const periods = schedule.periods || [schedule]; // يدعم الشكلين القديم والجديد
+        if (schedule.days.includes(todayKey)) {
+            for (const period of periods) {
+                const [startHours, startMinutes] = period.start_time.split(':').map(Number);
+                const shiftStartDate = new Date(); // استخدم نسخة جديدة من التاريخ الحالي
+                shiftStartDate.setHours(startHours, startMinutes, 0, 0);
+                const gracePeriodStart = new Date(shiftStartDate.getTime() - 15 * 60000); // 15 دقيقة سماح
 
-                    const isTimeActive = (startDate, endDate) => {
-                        const gracePeriodStart = new Date(startDate.getTime() - 15 * 60000);
-                        return now >= gracePeriodStart && now < endDate;
-                    };
+                // تحقق مما إذا كانت الفترة الحالية قد بدأت
+                if (now >= gracePeriodStart) {
+                    // تحقق مما إذا كان قد سجل خروجاً من هذه الفترة بالفعل
+                    const hasCompletedThisPeriod = recentRecords.some(rec => {
+                        const checkinTime = new Date(rec.created_at);
+                        // نعتبر الفترة مكتملة إذا سجل حضوراً فيها أو بعدها ولديه وقت خروج
+                        return rec.checkout_at && checkinTime >= shiftStartDate;
+                    });
 
-                    if (schedule.days.includes(todayKey)) {
-                        const shiftStartDate = new Date(now);
-                        shiftStartDate.setHours(startHours, startMinutes, 0, 0);
-                        const shiftEndDate = new Date(now);
-                        shiftEndDate.setHours(endHours, endMinutes, 0, 0);
-                        if (isOvernight) shiftEndDate.setDate(shiftEndDate.getDate() + 1);
-                        if (isTimeActive(shiftStartDate, shiftEndDate)) {
-                            shiftIsActiveNow = true;
-                            break;
-                        }
+                    if (!hasCompletedThisPeriod) {
+                        periodToShowCheckIn = period;
+                        break; // وجدنا أول فترة متاحة اليوم
                     }
-
-                    if (!shiftIsActiveNow && isOvernight && schedule.days.includes(yesterdayKey)) {
-                        const shiftStartDate = new Date(yesterday);
-                        shiftStartDate.setHours(startHours, startMinutes, 0, 0);
-                        const shiftEndDate = new Date(now);
-                        shiftEndDate.setHours(endHours, endMinutes, 0, 0);
-                        if (isTimeActive(shiftStartDate, shiftEndDate)) {
-                            shiftIsActiveNow = true;
-                            break;
-                        }
-                    }
-                }
-            }
-
-            if (shiftIsActiveNow) {
-                statusText.innerHTML = `<p>ورديتك الحالية فعالة. يمكنك تسجيل حضورك الآن.</p>`;
-                checkInBtn.classList.remove('hidden');
-            } else {
-                const nextShiftInfo = calculateNextShift(schedule);
-                if (nextShiftInfo) {
-                    const title = nextShiftInfo.isToday ? `ورديتك القادمة بعد ${nextShiftInfo.formattedCountdown}` : `ورديتك القادمة ${nextShiftInfo.formattedDateTime}`;
-                    statusText.innerHTML = `
-                        <div class="lockout-message">
-                            <h4 style="color: var(--accent-color);">${title}</h4>
-                            <p>سيظهر زر تسجيل الحضور قبل بداية الوردية بـ 15 دقيقة.</p>
-                            <small>إذا كان هناك أي ملاحظات، تواصل مع مشرفك.</small>
-                        </div>`;
-                } else {
-                     statusText.innerHTML = `<p>ليس لديك ورديات مجدولة.</p>`;
                 }
             }
         }
+
+        if (periodToShowCheckIn) {
+            statusText.innerHTML = `<p>ورديتك (${formatTimeAMPM(periodToShowCheckIn.start_time)}) فعالة. يمكنك تسجيل حضورك الآن.</p>`;
+            checkInBtn.classList.remove('hidden');
+        } else {
+            // إذا لم نجد فترة حالية، ابحث عن الوردية القادمة
+            const nextShiftInfo = calculateNextShift(schedule);
+            if (nextShiftInfo) {
+                const title = nextShiftInfo.isToday ? `ورديتك القادمة بعد ${nextShiftInfo.formattedCountdown}` : `ورديتك القادمة ${nextShiftInfo.formattedDateTime}`;
+                statusText.innerHTML = `
+                    <div class="lockout-message">
+                        <h4 style="color: var(--accent-color);">${title}</h4>
+                        <p>سيظهر زر تسجيل الحضور قبل بداية الوردية بـ 15 دقيقة.</p>
+                    </div>`;
+            } else {
+                 statusText.innerHTML = `<p>ليس لديك ورديات مجدولة.</p>`;
+            }
+        }
+
     } catch (error) {
         document.getElementById('attendance-status').innerHTML = `<p style="color: var(--denied-color);">${error.message}</p>`;
         console.error("Attendance Page Error:", error);
@@ -3012,6 +3302,10 @@ async function startPersistentTracking(fullUser, attendanceId) {
     if (locationStatus) locationStatus.innerHTML = `<p style="color: #22c55e;">التتبع المباشر فعال.</p>`;
 
     const UPDATE_INTERVAL_MS = 15000;
+    // --- بداية الإضافة: نظام التأكيد المتعدد ---
+    let consecutiveOutOfBounds = 0;
+    const OUT_OF_BOUNDS_THRESHOLD = 3; // يتطلب 3 قراءات متتالية خاطئة
+    // --- نهاية الإضافة ---
 
     const handleTrackingError = (geoError) => {
         console.error("خطأ في التتبع المستمر:", geoError);
@@ -3039,24 +3333,28 @@ async function startPersistentTracking(fullUser, attendanceId) {
                     supabaseClient.from('guard_locations').upsert({ guard_id: fullUser.id, latitude, longitude }, { onConflict: 'guard_id' }).then();
 
                     const distance = calculateDistance(siteCoords, { lat: latitude, lng: longitude });
-
-                    // ==========================================================
-                    // ===         بداية الإضافة: قاعدة الانسحاب الذكية          ===
-                    // ==========================================================
-                    // القاعدة الجديدة: لن يتم تسجيل الانسحاب إلا إذا كان أقرب موقع محتمل للحارس
-                    // (مع أخذ هامش الخطأ في الاعتبار) لا يزال خارج النطاق المحدد.
                     const effectiveDistance = distance - accuracy;
 
+                    // --- بداية التعديل: تطبيق منطق التأكيد المتعدد ---
                     if (effectiveDistance > radius) {
-                        console.log(`انسحاب مؤكد: المسافة ${distance.toFixed(0)}م, الدقة ${accuracy.toFixed(0)}م, النطاق ${radius}م`);
-                        stopPersistentTracking();
-                        showToast(`تم تسجيل انسحاب للحارس: ${fullUser.name}`, 'error');
-                        await supabaseClient.from('attendance').update({ status: 'انسحاب', checkout_at: new Date() }).eq('id', attendanceId);
-                        loadAttendancePage();
+                        consecutiveOutOfBounds++;
+                        console.warn(`تحذير: القراءة رقم ${consecutiveOutOfBounds} خارج النطاق.`);
+
+                        if (consecutiveOutOfBounds >= OUT_OF_BOUNDS_THRESHOLD) {
+                            console.log(`انسحاب مؤكد بعد ${OUT_OF_BOUNDS_THRESHOLD} قراءات: المسافة ${distance.toFixed(0)}م, النطاق ${radius}م`);
+                            stopPersistentTracking();
+                            showToast(`تم تسجيل انسحاب للحارس: ${fullUser.name}`, 'error');
+                            await supabaseClient.from('attendance').update({ status: 'انسحاب', checkout_at: new Date() }).eq('id', attendanceId);
+                            loadAttendancePage();
+                        }
+                    } else {
+                        // إذا عادت القراءة لتكون داخل النطاق، أعد تعيين العداد
+                        if (consecutiveOutOfBounds > 0) {
+                            console.log('تمت إعادة تعيين عداد الانسحاب، الحارس عاد للنطاق.');
+                        }
+                        consecutiveOutOfBounds = 0;
                     }
-                    // ==========================================================
-                    // ===                    نهاية الإضافة                     ===
-                    // ==========================================================
+                    // --- نهاية التعديل ---
                 },
                 handleTrackingError,
                 { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
@@ -5299,8 +5597,6 @@ async function generatePayroll() {
     const resultsContainer = document.getElementById('payroll-results-container');
     const startDateString = document.getElementById('payroll-start-date').value;
     const endDateString = document.getElementById('payroll-end-date').value;
-
-    // --- قراءة قيم الفلاتر الجديدة ---
     const regionVal = document.getElementById('hr-filter-region-payroll').value;
     const cityVal = document.getElementById('hr-filter-city-payroll').value;
     const projectVal = document.getElementById('hr-filter-project-payroll').value;
@@ -5323,19 +5619,10 @@ async function generatePayroll() {
             .select(`*, job_vacancies!users_vacancy_id_fkey(*, contracts!inner(*))`)
             .not('employment_status', 'in', '("تغطية", "مستقيل")');
 
-        // --- تطبيق الفلاتر الجديدة على الاستعلام ---
-        if (regionVal) {
-            query = query.eq('region', regionVal);
-        }
-        if (cityVal) {
-            query = query.eq('city', cityVal);
-        }
-        if (projectVal) {
-            query = query.filter('project', 'cs', `{${projectVal}}`);
-        }
-        if (locationVal) {
-            query = query.eq('location', locationVal);
-        }
+        if (regionVal) query = query.eq('region', regionVal);
+        if (cityVal) query = query.eq('city', cityVal);
+        if (projectVal) query = query.filter('project', 'cs', `{${projectVal}}`);
+        if (locationVal) query = query.eq('location', locationVal);
 
         const { data: allEmployees, error: e1 } = await query;
 
@@ -5360,111 +5647,109 @@ async function generatePayroll() {
         }
 
         const holidayDates = new Set(officialHolidays.map(h => new Date(h.holiday_date).toDateString()));
-        const primaryGuards = allEmployees.filter(emp => emp.employment_status === 'اساسي');
 
         for (const emp of allEmployees) {
-            if (emp.employment_status === 'بديل راحة') {
-                // (منطق البديل يبقى كما هو)
-            } else {
-                const vacancy = emp.job_vacancies;
-                if (!vacancy || !vacancy.schedule_details?.length) continue;
+            // نحن نعالج جميع الموظفين بنفس الطريقة، لم يعد هناك حاجة لـ if/else لـ "بديل راحة"
+            const vacancy = emp.job_vacancies;
+            if (!vacancy || !vacancy.schedule_details?.length) continue;
 
-                const shift = vacancy.schedule_details[0];
-                const fullMonthSalary = (vacancy.base_salary || 0) + (vacancy.housing_allowance || 0) + (vacancy.transport_allowance || 0) + (vacancy.other_allowances || 0);
-                const dailyRate = fullMonthSalary / 30;
-                const hourlyRate = dailyRate / (shift.work_hours || 8);
+            const shift = vacancy.schedule_details[0];
+            const fullMonthSalary = (vacancy.base_salary || 0) + (vacancy.housing_allowance || 0) + (vacancy.transport_allowance || 0) + (vacancy.other_allowances || 0);
+            const dailyRate = fullMonthSalary / 30;
+            const hourlyRate = dailyRate / (shift.work_hours || 8);
+            const empStartDate = emp.start_of_work_date ? new Date(emp.start_of_work_date) : null;
+            const effectiveStartDate = (empStartDate && empStartDate > startDate) ? empStartDate : startDate;
+            
+            let scheduledWorkDays = 0, absentDays = 0, totalLatenessMinutes = 0, totalWorkedMs = 0;
 
-                let scheduledWorkDays = 0, restDays = 0, absentDays = 0, totalLatenessMinutes = 0;
-                const empStartDate = emp.start_of_work_date ? new Date(emp.start_of_work_date) : null;
-                const effectiveStartDate = (empStartDate && empStartDate > startDate) ? empStartDate : startDate;
+            for (let day = new Date(effectiveStartDate); day <= endDate; day.setDate(day.getDate() + 1)) {
+                const dayName = day.toLocaleDateString('en-US', { weekday: 'short' });
+                if ((shift.days || []).includes(dayName)) {
+                    scheduledWorkDays++;
+                    const dayRecords = attendanceRecords.filter(att => att.guard_id === emp.id && new Date(att.created_at).toDateString() === day.toDateString());
+                    const isOnLeave = leaveRecords.some(leave => { const d = new Date(leave['details->>start_date']); return leave.user_id === emp.id && day >= d && day < new Date(d.setDate(d.getDate() + parseInt(leave['details->>days']))); });
 
-                for (let day = new Date(effectiveStartDate); day <= endDate; day.setDate(day.getDate() + 1)) {
-                    const dayName = day.toLocaleDateString('en-US', { weekday: 'short' });
-                    if ((shift.days || []).includes(dayName)) {
-                        scheduledWorkDays++;
-                        const attendanceRecord = attendanceRecords.find(att => att.guard_id === emp.id && new Date(att.created_at).toDateString() === day.toDateString());
-                        const isOnLeave = leaveRecords.some(leave => { const d = new Date(leave['details->>start_date']); return leave.user_id === emp.id && day >= d && day < new Date(d.setDate(d.getDate() + parseInt(leave['details->>days']))); });
-
-                        if (attendanceRecord) {
-                            const shiftStartTime = new Date(day);
-                            const [startHours, startMinutes] = shift.start_time.split(':');
-                            shiftStartTime.setHours(startHours, startMinutes, 0, 0);
-                            const checkinTime = new Date(attendanceRecord.created_at);
-                            if (checkinTime > shiftStartTime) {
-                                const latenessMs = checkinTime - shiftStartTime;
-                                totalLatenessMinutes += Math.round(latenessMs / 60000);
+                    if (dayRecords.length > 0) {
+                        // **المنطق الجديد: جمع مدة كل فترات العمل**
+                        dayRecords.forEach(rec => {
+                            if (rec.checkout_at) {
+                                totalWorkedMs += (new Date(rec.checkout_at) - new Date(rec.created_at));
                             }
-                        } else if (!isOnLeave && !holidayDates.has(day.toDateString())) {
-                            absentDays++;
-                        }
-                    } else { restDays++; }
+                        });
+
+                        // حساب التأخير بناءً على أول سجل حضور في اليوم
+                        const sortedDayRecords = dayRecords.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+const scheduledPeriods = shift.periods || [shift];
+
+scheduledPeriods.forEach((period, index) => {
+    const correspondingRecord = sortedDayRecords[index];
+
+    // نتأكد من وجود فترة مجدولة وسجل حضور مطابق لها
+    if (period && correspondingRecord) {
+        const periodStartTime = new Date(day);
+        const [startHours, startMinutes] = period.start_time.split(':');
+        periodStartTime.setHours(startHours, startMinutes, 0, 0);
+
+        const checkinTime = new Date(correspondingRecord.created_at);
+
+        if (checkinTime > periodStartTime) {
+            const latenessMs = checkinTime - periodStartTime;
+            totalLatenessMinutes += Math.round(latenessMs / 60000);
+        }
+    }
+});
+
+                    } else if (!isOnLeave && !holidayDates.has(day.toDateString())) {
+                        absentDays++;
+                    }
                 }
-
-                const actualWorkDays = scheduledWorkDays - absentDays;
-                const totalWorkHours = actualWorkDays * (shift.work_hours || 8);
-                const permissionRecords = permissionRequests.filter(req => req.user_id === emp.id);
-                const withdrawalRecords = attendanceRecords.filter(att => att.guard_id === emp.id && att.status === 'انسحاب');
-                const projectName = Array.isArray(emp.project) ? emp.project.join(', ') : (emp.project || '');
-
-                const absenceDeduction = (absentDays * 2) * dailyRate;
-                const latenessDeduction = (totalLatenessMinutes * (hourlyRate / 60));
-                const withdrawalDeductionValue = (dailyRate * withdrawalRecords.length) + (dailyRate * 2 * withdrawalRecords.length);
-                const permissionDeductionValue = dailyRate * permissionRecords.length;
-
-                let grossSalary = fullMonthSalary;
-                if (empStartDate && empStartDate > startDate) {
-                    const daysInMonth = (endDate - startDate) / (1000 * 60 * 60 * 24) + 1;
-                    grossSalary = (fullMonthSalary / daysInMonth) * scheduledWorkDays;
-                }
-
-                const employeeOvertimeTotal = overtimeRecords.filter(o => o.employee_id === emp.id).reduce((total, o) => total + (o.overtime_pay || 0), 0);
-                const empPenalties = penalties.filter(p => p.user_id === emp.id);
-const loanDeductions = empPenalties.filter(p => p.reason === 'خصم سلفة معتمدة').reduce((total, p) => total + (p.amount || 0), 0);
-const otherDeductions = empPenalties.filter(p => p.reason !== 'خصم سلفة معتمدة').reduce((total, p) => total + (p.amount || 0), 0);
-                const isFirstMonth = empStartDate && empStartDate >= startDate && empStartDate <= endDate;
-                const uniformDeduction = isFirstMonth ? 150 : 0;
-                const insuranceDeduction = emp.insurance_status === 'مسجل' ? (emp.insurance_deduction_amount || 0) : 0;
-
-                const totalDeductions = absenceDeduction + latenessDeduction + otherDeductions + uniformDeduction + insuranceDeduction + withdrawalDeductionValue + permissionDeductionValue + loanDeductions;
-                const netSalary = (grossSalary + employeeOvertimeTotal) - totalDeductions;
-
-                payrollExportData.push({
-                    "اسم الموظف": emp.name, "رقم الهوية": emp.id_number, "حالة الموظف": emp.employment_status,
-                    "المشروع": projectName, "ايام العمل": actualWorkDays, "ساعات العمل": totalWorkHours,
-                    "قيمة الساعة": hourlyRate, "قيمة اليومية": dailyRate, "الراتب الاساسي": vacancy.base_salary,
-                    "بدل السكن": vacancy.housing_allowance, "بدل نقل": vacancy.transport_allowance,
-                    "بدلات اخرى": vacancy.other_allowances, "اجمالي الراتب": fullMonthSalary, "راحة": restDays,
-                    "عمل اضافي": employeeOvertimeTotal, "المستحق": grossSalary + employeeOvertimeTotal,
-                    "استقطاع تأمينات": insuranceDeduction, "خصم الزي": uniformDeduction,
-                    "خصم تأخير": latenessDeduction, "استئذان": permissionRecords.length,
-                    "انسحاب": withdrawalRecords.length, "ايام الغياب": absentDays, "خصم الغياب": absenceDeduction,
-                    "سلفة": loanDeductions, "خصومات اخرى": otherDeductions, "مجموع الاستقطاعات": totalDeductions,
-                    "الصافي": netSalary, "الايبان": emp.iban, "البنك": emp.bank_name,
-                });
             }
+
+            const totalWorkHours = totalWorkedMs / (1000 * 60 * 60);
+            const permissionRecords = permissionRequests.filter(req => req.user_id === emp.id);
+            const withdrawalRecords = attendanceRecords.filter(att => att.guard_id === emp.id && att.status === 'انسحاب');
+            const absenceDeduction = (absentDays * 2) * dailyRate;
+            const latenessDeduction = (totalLatenessMinutes * (hourlyRate / 60));
+            const withdrawalDeductionValue = (dailyRate * withdrawalRecords.length) + (dailyRate * 2 * withdrawalRecords.length);
+            const permissionDeductionValue = dailyRate * permissionRecords.length;
+            let grossSalary = fullMonthSalary;
+            if (empStartDate && empStartDate > startDate) {
+                const daysInPeriod = (endDate - startDate) / (1000 * 60 * 60 * 24) + 1;
+                const workedDaysRatio = scheduledWorkDays / daysInPeriod;
+                grossSalary = fullMonthSalary * workedDaysRatio;
+            }
+            const employeeOvertimeTotal = overtimeRecords.filter(o => o.employee_id === emp.id).reduce((total, o) => total + (o.overtime_pay || 0), 0);
+            const empPenalties = penalties.filter(p => p.user_id === emp.id);
+            const loanDeductions = empPenalties.filter(p => p.reason === 'خصم سلفة معتمدة').reduce((total, p) => total + (p.amount || 0), 0);
+            const otherDeductions = empPenalties.filter(p => p.reason !== 'خصم سلفة معتمدة').reduce((total, p) => total + (p.amount || 0), 0);
+            const isFirstMonth = empStartDate && empStartDate >= startDate && empStartDate <= endDate;
+            const uniformDeduction = isFirstMonth ? 150 : 0;
+            const insuranceDeduction = emp.insurance_status === 'مسجل' ? (emp.insurance_deduction_amount || 0) : 0;
+            const totalDeductions = absenceDeduction + latenessDeduction + otherDeductions + uniformDeduction + insuranceDeduction + withdrawalDeductionValue + permissionDeductionValue + loanDeductions;
+            const netSalary = (grossSalary + employeeOvertimeTotal) - totalDeductions;
+
+            payrollExportData.push({
+                "اسم الموظف": emp.name, "رقم الهوية": emp.id_number, "حالة الموظف": emp.employment_status,
+                "المشروع": Array.isArray(emp.project) ? emp.project.join(', ') : (emp.project || ''), 
+                "ايام العمل": scheduledWorkDays - absentDays, 
+                "ساعات العمل": totalWorkHours.toFixed(2),
+                "قيمة الساعة": hourlyRate.toFixed(2), "قيمة اليومية": dailyRate.toFixed(2), "الراتب الاساسي": vacancy.base_salary,
+                "بدل السكن": vacancy.housing_allowance, "بدل نقل": vacancy.transport_allowance,
+                "بدلات اخرى": vacancy.other_allowances, "اجمالي الراتب": fullMonthSalary, "راحة": 0, // تم تعديل "راحة" لتكون قيمة ثابتة حالياً
+                "عمل اضافي": employeeOvertimeTotal, "المستحق": grossSalary + employeeOvertimeTotal,
+                "استقطاع تأمينات": insuranceDeduction, "خصم الزي": uniformDeduction,
+                "خصم تأخير": latenessDeduction, "استئذان": permissionRecords.length,
+                "انسحاب": withdrawalRecords.length, "ايام الغياب": absentDays, "خصم الغياب": absenceDeduction,
+                "سلفة": loanDeductions, "خصومات اخرى": otherDeductions, "مجموع الاستقطاعات": totalDeductions,
+                "الصافي": netSalary, "الايبان": emp.iban, "البنك": emp.bank_name,
+            });
         }
 
         const tableHeaders = payrollExportData.length > 0 ? Object.keys(payrollExportData[0]).map(key => `<th>${key}</th>`).join('') : '';
-        const nonCurrencyColumns = ['اسم الموظف', 'رقم الهوية', 'حالة الموظف', 'موقع العمل', 'المشروع', 'رقم الجوال', 'ايام العمل', 'ساعات العمل', 'راحة', 'ايام الغياب', 'الايبان', 'البنك', 'المنطقة', 'المدينة', 'حالة التأمينات', 'استئذان', 'انسحاب'];
-
-        const tableRowsHtml = payrollExportData.map(row => {
-            let rowHtml = '<tr>';
-            for (const key in row) {
-                let value = row[key];
-                if (typeof value === 'number' && !nonCurrencyColumns.includes(key)) {
-                    value = `${value.toFixed(2)} ر.س`;
-                }
-                if (row['حالة الموظف'] === 'بديل راحة' && (key === 'قيمة الساعة' || key === 'قيمة اليومية')) {
-                    value = 'متغيرة';
-                }
-                rowHtml += `<td>${value || '-'}</td>`;
-            }
-            rowHtml += '</tr>';
-            return rowHtml;
-        }).join('');
-
+        const nonCurrencyColumns = ['اسم الموظف', 'رقم الهوية', 'حالة الموظف', 'المشروع', 'ايام العمل', 'ساعات العمل', 'راحة', 'ايام الغياب', 'الايبان', 'البنك', 'استئذان', 'انسحاب'];
+        const tableRowsHtml = payrollExportData.map(row => `<tr>${Object.keys(row).map(key => `<td>${(typeof row[key] === 'number' && !nonCurrencyColumns.includes(key)) ? `${row[key].toFixed(2)} ر.س` : (row[key] || '-')}</td>`).join('')}</tr>`).join('');
+        
         resultsContainer.innerHTML = `<div class="table-header"><h3>مسير رواتب من ${startDateString} إلى ${endDateString}</h3><button id="export-payroll-btn" class="btn btn-success"><i class="ph-bold ph-file-xls"></i> تصدير إلى Excel</button></div><table><thead><tr>${tableHeaders}</tr></thead><tbody>${tableRowsHtml}</tbody></table>`;
-
         await supabaseClient.from('audit_logs').insert({ user_name: currentUser.name, action_type: 'توليد مسير الرواتب', details: { startDate: startDateString, endDate: endDateString, employeeCount: payrollExportData.length } });
 
     } catch (err) {
@@ -6068,7 +6353,16 @@ async function fetchStatistics() {
 // بداية الإضافة
 navigator.serviceWorker.addEventListener('controllerchange', () => {
     sessionStorage.setItem('update_in_progress', 'true');
+    // بداية الاستبدال
+const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+if (isLocalhost) {
+    // على اللوكال هوست، اذهب للصفحة الرئيسية لتجنب خطأ 404
+    window.location.href = '/';
+} else {
+    // على السيرفر المباشر، قم بإعادة تحميل عادية
     window.location.reload();
+}
+// نهاية الاستبدال
 });
 // نهاية الإضافة
 // بداية الإضافة
@@ -6089,10 +6383,17 @@ document.addEventListener('visibilitychange', () => {
 });
 // نهاية الإضافة
 document.addEventListener('DOMContentLoaded', async function() {
-// بداية الإضافة: تنظيف علامة التحديث عند تحميل الصفحة
-if (sessionStorage.getItem('update_in_progress')) {
-    sessionStorage.removeItem('update_in_progress');
-}
+
+    if (sessionStorage.getItem('update_in_progress')) {
+        sessionStorage.removeItem('update_in_progress');
+    }
+
+    
+    if (sessionStorage.getItem('just_logged_out')) {
+        
+        sessionStorage.removeItem('just_logged_out');
+        return; // إيقاف التنفيذ هنا هو السلوك الصحيح
+    }
 // نهاية الإضافة
 
 // --- منطق صفحة استيراد العقود ---
@@ -6214,32 +6515,32 @@ if (menuBtn) {
     // بداية اللصق
 // بداية الاستبدال
     const { data: { session } } = await supabaseClient.auth.getSession();
+    
 
     if (session && session.user) {
+        
         const { data: userProfile, error: profileError } = await supabaseClient
-            .from('users')
-            .select('*')
-            .eq('auth_user_id', session.user.id)
-            .single();
+            .from('users').select('*').eq('auth_user_id', session.user.id).single();
 
         if (userProfile) {
+            
             currentUser = userProfile;
             sessionStorage.setItem('currentUser', JSON.stringify(userProfile));
-
             updateUIVisibility(currentUser.role);
             document.getElementById('login-page').style.display = 'none';
             document.querySelector('.dashboard-container').classList.remove('hidden');
-
             const userProfileSpan = document.querySelector('.user-profile span');
             if (userProfileSpan) userProfileSpan.textContent = `مرحباً، ${currentUser.name}`;
-
             displayActiveAnnouncements();
-
             handleRouteChange(true);
         } else {
+            
             await supabaseClient.auth.signOut();
         }
+    } else {
+        
     }
+
 // نهاية الاستبدال
 // نهاية اللصق
     // --- END: Check for existing session ---
@@ -6433,33 +6734,37 @@ if (event.target.id === 'employee-role') {
         }
     }
 
-    if (event.target.id === 'vacancy-location-select') {
-        const locationName = event.target.value;
-        const contractId = document.getElementById('vacancy-contract').value;
-        const shiftGroup = document.getElementById('vacancy-shift-group');
-        const shiftSelect = document.getElementById('vacancy-shift-select');
+    // بداية الاستبدال
+if (event.target.id === 'vacancy-location-select') {
+    const locationName = event.target.value;
+    const contractId = document.getElementById('vacancy-contract').value;
+    const shiftGroup = document.getElementById('vacancy-shift-group');
+    const shiftSelect = document.getElementById('vacancy-shift-select');
 
-        shiftGroup.classList.add('hidden');
-        shiftSelect.innerHTML = '';
+    shiftGroup.classList.add('hidden');
+    shiftSelect.innerHTML = '';
 
-        if (!locationName || !contractId) return;
+    if (!locationName || !contractId) return;
 
-        const { data: contract, error } = await supabaseClient
-            .from('contracts').select('contract_locations').eq('id', contractId).single();
-            
-        if (error) return;
+    const { data: contract, error } = await supabaseClient
+        .from('contracts').select('contract_locations').eq('id', contractId).single();
 
-        const selectedLocation = contract.contract_locations.find(loc => loc.name === locationName);
-        
-        if (selectedLocation && selectedLocation.shifts && selectedLocation.shifts.length > 0) {
-            shiftSelect.innerHTML = '<option value="">-- اختر وردية --</option>';
-            selectedLocation.shifts.forEach((shift, index) => {
-                const shiftLabel = `${shift.name || `وردية ${index + 1}`} (من ${shift.start_time || '؟'} إلى ${shift.end_time || '؟'})`;
-                shiftSelect.innerHTML += `<option value='${JSON.stringify(shift)}'>${shiftLabel}</option>`;
-            });
-            shiftGroup.classList.remove('hidden');
-        }
+    if (error) return;
+
+    const selectedLocation = contract.contract_locations.find(loc => loc.name === locationName);
+
+    if (selectedLocation && selectedLocation.shifts && selectedLocation.shifts.length > 0) {
+        shiftSelect.innerHTML = '<option value="">-- اختر وردية --</option>';
+        selectedLocation.shifts.forEach((shift, index) => {
+            // استخدام الدالة الموحدة لعرض الوقت بشكل صحيح
+            const shiftLabel = `${shift.name || `وردية ${index + 1}`} ${createShiftTimeLabel(shift)}`;
+            shiftSelect.innerHTML += `<option value='${JSON.stringify(shift)}'>${shiftLabel}</option>`;
+        });
+        shiftGroup.classList.remove('hidden');
     }
+}
+
+// نهاية الاستبدال
 
     // بداية الإضافة: الملء التلقائي في نافذة إنشاء التغطية
 if (event.target.id === 'coverage-link-vacancy') {
@@ -6540,109 +6845,127 @@ if (event.target.id === 'coverage-link-vacancy') {
     }
 // --- ثانياً: منطق الملء التلقائي في نافذة "إضافة/تعديل موظف" (تحديث جديد) ---
     if (event.target.id === 'employee-contract' || event.target.id === 'employee-vacancy') {
-        const contractSelect = document.getElementById('employee-contract');
-        const vacancySelect = document.getElementById('employee-vacancy');
-        const regionInput = document.getElementById('employee-region');
-        const cityInput = document.getElementById('employee-city');
-        const projectDisplay = document.getElementById('employee-project-display');
-        const locationDisplay = document.getElementById('employee-location-display');
-        const shiftDisplay = document.getElementById('employee-shift-display');
+    const contractSelect = document.getElementById('employee-contract');
+    const vacancySelect = document.getElementById('employee-vacancy');
+    const regionInput = document.getElementById('employee-region');
+    const cityInput = document.getElementById('employee-city');
+    const projectDisplay = document.getElementById('employee-project-display');
+    const locationDisplay = document.getElementById('employee-location-display');
+    const shiftDisplay = document.getElementById('employee-shift-display');
 
-        const contractId = contractSelect.value;
-        const vacancyId = vacancySelect.value;
+    const contractId = contractSelect.value;
+    const vacancyId = vacancySelect.value;
 
-        // --- الحالة 1: المستخدم يختار شاغر محدد من القائمة ---
-        if (event.target.id === 'employee-vacancy' && vacancyId) {
-            shiftDisplay.value = 'جاري جلب التفاصيل...'; // إعطاء المستخدم إشارة بالتحميل
-            const { data: vacancy, error } = await supabaseClient
-                .from('job_vacancies').select(`*`).eq('id', vacancyId).single();
+    // --- الحالة 1: المستخدم يختار شاغر محدد من القائمة ---
+    if (event.target.id === 'employee-vacancy' && vacancyId) {
+        shiftDisplay.value = 'جاري جلب التفاصيل...';
+        const { data: vacancy, error } = await supabaseClient
+            .from('job_vacancies').select(`*`).eq('id', vacancyId).single();
 
-            if (vacancy) {
-                // تعبئة تلقائية لكافة الحقول المتعلقة بالشاغر
-                regionInput.value = vacancy.region || '';
-                cityInput.value = vacancy.location || '';
-                projectDisplay.value = vacancy.project || '';
-                locationDisplay.value = vacancy.specific_location || '';
-                contractSelect.value = vacancy.contract_id || '';
+        if (vacancy) {
+            regionInput.value = vacancy.region || '';
+            cityInput.value = vacancy.location || '';
+            projectDisplay.value = vacancy.project || '';
+            locationDisplay.value = vacancy.specific_location || '';
+            contractSelect.value = vacancy.contract_id || '';
 
-                const shift = vacancy.schedule_details?.[0];
-                if (shift) {
-                    shiftDisplay.value = `${shift.name || 'وردية'} (من ${formatTimeAMPM(shift.start_time)} إلى ${formatTimeAMPM(shift.end_time)})`;
-                } else {
-                    shiftDisplay.value = 'لا توجد تفاصيل وردية لهذا الشاغر';
-                }
-            } else {
-                shiftDisplay.value = ''; // إفراغ الحقل عند حدوث خطأ
-            }
-        } 
-        // --- الحالة 2: المستخدم يغير العقد ---
-        else if (event.target.id === 'employee-contract') {
-            // إعادة تعيين الحقول التابعة
-            vacancySelect.innerHTML = '<option value="">جاري التحميل...</option>';
-            shiftDisplay.value = '';
-            locationDisplay.value = '';
-            projectDisplay.value = '';
-            cityInput.value = '';
-            regionInput.value = '';
-
-            if (contractId) {
-                const { data: contract } = await supabaseClient.from('contracts').select('region, city, company_name').eq('id', contractId).single();
-                if (contract) {
-                    regionInput.value = contract.region || '';
-                    cityInput.value = Array.isArray(contract.city) ? contract.city.join(', ') : (contract.city || '');
-                    projectDisplay.value = contract.company_name || '';
-                }
-
-                const { data: vacancies } = await supabaseClient
-                    .from('job_vacancies')
-                    .select('id, project, specific_location, schedule_details')
-                    .eq('status', 'open')
-                    .eq('contract_id', contractId);
-
-                vacancySelect.innerHTML = '<option value="">غير مرتبط بشاغر</option>';
-                if (vacancies && vacancies.length > 0) {
-                     vacancySelect.innerHTML += vacancies.filter(v => v.schedule_details && v.schedule_details.length > 0).map(v => {
-                        const shift = v.schedule_details[0];
-                        const shiftName = shift.name || 'وردية';
-                        const startTime = formatTimeAMPM(shift.start_time);
-                        const endTime = formatTimeAMPM(shift.end_time);
-                        const shiftText = `${shiftName} (${startTime} - ${endTime})`;
-                        const optionText = `${v.project} - ${v.specific_location || 'موقع عام'} - ${shiftText}`;
-                        return `<option value="${v.id}">${optionText}</option>`;
-                    }).join('');
-                }
-            } else {
-                // إذا اختار المستخدم "غير تابع لعقد"
-                const { data: allOpenVacancies } = await supabaseClient
-                    .from('job_vacancies')
-                    .select('id, project, specific_location, schedule_details')
-                    .eq('status', 'open');
-
-                vacancySelect.innerHTML = '<option value="">غير مرتبط بشاغر</option>';
-                if (allOpenVacancies && allOpenVacancies.length > 0) {
-                     vacancySelect.innerHTML += allOpenVacancies.map(v => {
-                        const shift = v.schedule_details[0];
-                        const shiftName = shift.name || 'وردية';
-                        const startTime = formatTimeAMPM(shift.start_time);
-                        const endTime = formatTimeAMPM(shift.end_time);
-                        const shiftText = `${shiftName} (${startTime} - ${endTime})`;
-                        const optionText = `${v.project} - ${v.specific_location || 'موقع عام'} - ${shiftText}`;
-                        return `<option value="${v.id}">${optionText}</option>`;
-                    }).join('');
-                }
-            }
-        } 
-        // --- الحالة 3: المستخدم يزيل اختيار الشاغر ---
-        else if (event.target.id === 'employee-vacancy' && !vacancyId) {
+            const shift = vacancy.schedule_details?.[0];
+            // *** هنا التصحيح الأول ***
+            shiftDisplay.value = `${shift?.name || 'وردية'} ${createShiftTimeLabel(shift)}`;
+        } else {
             shiftDisplay.value = '';
         }
+    } 
+    // --- الحالة 2: المستخدم يغير العقد ---
+    else if (event.target.id === 'employee-contract') {
+    vacancySelect.innerHTML = '<option value="">جاري التحميل...</option>';
+    shiftDisplay.value = '';
+    locationDisplay.value = '';
+    projectDisplay.value = '';
+    cityInput.value = '';
+    regionInput.value = '';
+
+    // أولاً: جلب قائمة بكل الشواغر المشغولة حالياً
+    const { data: assignedUsers, error: usersError } = await supabaseClient
+        .from('users').select('vacancy_id').not('vacancy_id', 'is', null);
+    const occupiedVacancyIds = usersError ? [] : assignedUsers.map(u => u.vacancy_id);
+
+    let query = supabaseClient.from('job_vacancies').select('id, project, specific_location, schedule_details');
+
+    if (contractId) {
+        // فلترة الشواغر بناءً على العقد المختار
+        const { data: contract } = await supabaseClient.from('contracts').select('region, city, company_name').eq('id', contractId).single();
+        if (contract) {
+            regionInput.value = contract.region || '';
+            cityInput.value = Array.isArray(contract.city) ? contract.city.join(', ') : (contract.city || '');
+            projectDisplay.value = contract.company_name || '';
+        }
+        query = query.eq('contract_id', contractId);
     }
+
+    // بناء الاستعلام الذكي: جلب المفتوح أو المغلق الفارغ
+    let orFilter;
+    if (occupiedVacancyIds.length > 0) {
+        orFilter = `status.eq.open,and(status.eq.closed,id.not.in.(${occupiedVacancyIds.join(',')}))`;
+    } else {
+        // إذا لم يكن هناك أي شاغر مشغول، يكفي جلب المفتوح والمغلق
+        orFilter = `status.eq.open,status.eq.closed`;
+    }
+    query = query.or(orFilter);
+
+    const { data: availableVacancies, error } = await query;
+
+    vacancySelect.innerHTML = '<option value="">غير مرتبط بشاغر</option>';
+    if (availableVacancies && availableVacancies.length > 0) {
+         vacancySelect.innerHTML += availableVacancies.map(v => {
+            const shift = v.schedule_details?.[0];
+            const shiftName = shift?.name || 'وردية';
+            const shiftText = `${shiftName} ${createShiftTimeLabel(shift)}`;
+            const optionText = `${v.project} - ${v.specific_location || 'موقع عام'} - ${shiftText}`;
+            return `<option value="${v.id}">${optionText}</option>`;
+        }).join('');
+    }
+}
+    // --- الحالة 3: المستخدم يزيل اختيار الشاغر ---
+    else if (event.target.id === 'employee-vacancy' && !vacancyId) {
+        shiftDisplay.value = '';
+    }
+}
 });
 // نهاية الاستبدال
     // --- 2. منطق الأزرار والنوافذ المنبثقة (باستخدام تفويض الأحداث) ---
     // --- 3. Listener for All Body Clicks (Modals & Actions) ---
 // --- 3. Master Click Handler for the entire application ---
 document.body.addEventListener('click', async function(event) {
+
+// --- منطق تصدير سجل الحضور ---
+if (event.target.closest('#export-hr-log-btn')) {
+    exportHrAttendanceLogToExcel();
+}
+
+const addPeriodBtn = event.target.closest('.add-period-btn');
+if (addPeriodBtn) {
+    const periodsContainer = addPeriodBtn.previousElementSibling;
+    if (periodsContainer) { // التحقق من وجود الحاوية
+        const newPeriodHtml = createPeriodHtml({}, 1); 
+        periodsContainer.insertAdjacentHTML('beforeend', newPeriodHtml);
+    }
+    return; 
+}
+
+const deletePeriodBtn = event.target.closest('.delete-period-btn');
+if (deletePeriodBtn) {
+    const shiftCard = deletePeriodBtn.closest('.shift-entry-card');
+    deletePeriodBtn.closest('.shift-period-item').remove();
+
+    if(shiftCard) { // التحقق من وجود البطاقة
+        const anyTimeInput = shiftCard.querySelector('.shift-time-input');
+        if(anyTimeInput) {
+            anyTimeInput.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+    }
+    return; 
+}
 
 // ==========================================================
 // ===        بداية منطق أزرار صفحة إدارة الإعلانات        ===
@@ -7708,29 +8031,10 @@ if (event.target.closest('.view-contract-btn')) {
     body.innerHTML = detailsHtml;
 }
 
-// --- منطق حساب ساعات العمل تلقائياً ---
-document.getElementById('contract-modal')?.addEventListener('change', (event) => {
-    const target = event.target;
-    // التحقق إذا كان الحقل الذي تم تغييره هو حقل وقت البدء أو الانتهاء
-    if (target.classList.contains('shift-start-time') || target.classList.contains('shift-end-time')) {
-        const shiftCard = target.closest('.shift-entry-card');
-        if (shiftCard) {
-            const startTime = shiftCard.querySelector('.shift-start-time').value;
-            const endTime = shiftCard.querySelector('.shift-end-time').value;
-            const hoursInput = shiftCard.querySelector('.shift-work-hours');
 
-            if (startTime && endTime) {
-                const start = new Date(`1970-01-01T${startTime}`);
-                const end = new Date(`1970-01-01T${endTime}`);
-                let diff = (end - start) / (1000 * 60 * 60);
-                if (diff < 0) { // للتعامل مع الورديات الليلية (مثل من 10م إلى 6ص)
-                    diff += 24;
-                }
-                hoursInput.value = diff.toFixed(2); // عرض الساعات مع كسر عشري (مثل 8.5)
-            }
-        }
-    }
-});    
+
+
+
 // ================================================================
 // ===   بداية المنطق الجديد لإدارة العقود (إضافة/تعديل/حفظ)   ===
 // ================================================================
@@ -7747,137 +8051,65 @@ document.getElementById('contract-modal')?.addEventListener('change', (event) =>
     // بداية الاستبدال
 
     if (event.target.closest('.edit-contract-btn')) {
-        const contractId = event.target.closest('.edit-contract-btn').dataset.id;
-        const { data: contract, error } = await supabaseClient.from('contracts').select('*').eq('id', contractId).single();
+    const contractId = event.target.closest('.edit-contract-btn').dataset.id;
+    const { data: contract, error } = await supabaseClient.from('contracts').select('*').eq('id', contractId).single();
 
-        if (error || !contract) { return alert('حدث خطأ في جلب بيانات العقد.'); }
+    if (error || !contract) { return alert('حدث خطأ في جلب بيانات العقد.'); }
 
-        const modal = document.getElementById('contract-modal');
-        
-        document.getElementById('contract-modal-title').textContent = 'تعديل العقد';
-        document.getElementById('contract-id-hidden').value = contract.id;
-        document.getElementById('contract-company-name').value = contract.company_name || '';
-        document.getElementById('contract-end-date').value = contract.end_date || '';
+    const modal = document.getElementById('contract-modal');
 
-        const contractRegion = contract.region || '';
-        document.getElementById('contract-region-select').value = contractRegion;
-        
-        document.getElementById('contract-cities-tags').innerHTML = (contract.city || []).map(city => `<span class="tag-item">${city}<i class="ph-bold ph-x remove-tag"></i></span>`).join('');
+    // تعبئة البيانات الأساسية للعقد
+    document.getElementById('contract-modal-title').textContent = 'تعديل العقد';
+    document.getElementById('contract-id-hidden').value = contract.id;
+    document.getElementById('contract-company-name').value = contract.company_name || '';
+    document.getElementById('contract-end-date').value = contract.end_date || '';
+    document.getElementById('contract-workdays-select').value = contract.work_days_policy || '6';
+    document.getElementById('contract-region-select').value = contract.region || '';
+    document.getElementById('contract-cities-tags').innerHTML = (contract.city || []).map(city => `<span class="tag-item">${city}<i class="ph-bold ph-x remove-tag"></i></span>`).join('');
 
-        const locationsContainer = document.getElementById('locations-container');
-        locationsContainer.innerHTML = '';
-        if (contract.contract_locations && Array.isArray(contract.contract_locations)) {
-            const contractCities = contract.city || [];
+    const locationsContainer = document.getElementById('locations-container');
+    locationsContainer.innerHTML = '';
 
-            contract.contract_locations.forEach(locData => {
-                const newLocationCard = document.createElement('div');
-                newLocationCard.className = 'location-entry-card';
-
-                const regionDisplay = `<input type="text" class="location-region-display" value="${contractRegion}" readonly style="background-color: #e9ecef;">`;
-                const cityOptions = contractCities.map(c => `<option value="${c}" ${c === locData.city ? 'selected' : ''}>${c}</option>`).join('');
-                
-                const shiftsHtml = (locData.shifts || []).map(shiftData => {
-                    const daysHtml = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(day => `<label><input type="checkbox" value="${day}" ${(shiftData.days || []).includes(day) ? 'checked' : ''}> ${day.replace('Sun','الأحد').replace('Mon','الاثنين').replace('Tue','الثلاثاء').replace('Wed','الأربعاء').replace('Thu','الخميس').replace('Fri','الجمعة').replace('Sat','السبت')}</label>`).join('');
-                    return `
-                        <div class="shift-entry-card">
-                            <button class="delete-btn delete-shift-btn" style="position: static; float: left;"><i class="ph-bold ph-x"></i></button>
-                            <div class="form-grid" style="grid-template-columns: repeat(4, 1fr);">
-                                <div class="form-group"><label>مسمى الوردية</label><input type="text" class="shift-name" value="${shiftData.name || ''}"></div>
-                                <div class="form-group"><label>عدد الحراس</label><input type="number" class="shift-guards-count" value="${shiftData.guards_count || 1}"></div>
-                                <div class="form-group"><label>من ساعة</label><input type="time" class="shift-start-time" value="${shiftData.start_time || ''}"></div>
-                                <div class="form-group"><label>إلى ساعة</label><input type="time" class="shift-end-time" value="${shiftData.end_time || ''}"></div>
-                            </div>
-                            <div class="form-grid" style="grid-template-columns: 1fr 3fr;">
-                                <div class="form-group"><label>ساعات العمل</label><input type="number" class="shift-work-hours" value="${shiftData.work_hours || 0}" readonly style="background-color: #e9ecef;"></div>
-                                <div class="form-group"><label>أيام العمل</label><div class="days-selector">${daysHtml}</div></div>
-                            </div>
-                        </div>
-                    `;
-                }).join('');
-
-                newLocationCard.innerHTML = `
-                    <div class="location-header"><h5>${locData.name}</h5><button class="delete-btn delete-location-card-btn"><i class="ph-bold ph-trash"></i></button></div>
-                    <div class="form-grid" style="grid-template-columns: 1fr 1fr; align-items: end;">
-                        <div class="form-group"><label>منطقة هذا الموقع</label>${regionDisplay}</div>
-                        <div class="form-group"><label>مدينة هذا الموقع</label><select class="location-city-select">${cityOptions}</select></div>
-                    </div>
-                    <div class="form-grid" style="grid-template-columns: 3fr 1fr; align-items: end; margin-top: 15px;">
-                        <div class="form-group">
-                            <label>رابط الموقع (إحداثيات)</label>
-                            <input type="text" class="location-geofence-link" placeholder="مثال: 24.7111, 46.6800" value="${locData.geofence_link || ''}">
-                        </div>
-                        <div class="form-group">
-                            <label>نطاق التواجد (متر)</label>
-                            <input type="number" class="location-geofence-radius" value="${locData.geofence_radius || 200}">
-                        </div>
-                    </div>
-                    <div class="shifts-container-for-location">${shiftsHtml}</div>
-                    <button class="btn btn-secondary add-shift-to-card-btn"><i class="ph-bold ph-plus"></i> إضافة وردية</button>
-                `;
-                locationsContainer.appendChild(newLocationCard);
-            });
-        }
-        
-        modal.classList.remove('hidden');
+    // بناء واجهة المواقع والورديات باستخدام الدوال الجديدة
+    if (contract.contract_locations && Array.isArray(contract.contract_locations)) {
+        const contractCities = contract.city || [];
+        contract.contract_locations.forEach(locData => {
+            // استدعاء الدالة الجديدة لإنشاء كل موقع
+            const locationHtml = createLocationGroupHtml(locData, contractCities);
+            locationsContainer.insertAdjacentHTML('beforeend', locationHtml);
+        });
     }
+
+    modal.classList.remove('hidden');
+}
 
 // نهاية الاستبدال
 
 // نهاية الاستبدال
 
 // --- عند الضغط على زر "إضافة موقع" (مع حقول النطاق الجغرافي) ---
+// بداية الاستبدال
 if (event.target.closest('#add-location-from-input-btn')) {
     const input = document.getElementById('new-location-name-input');
     const locationName = input.value.trim();
     if (!locationName) return alert('الرجاء كتابة اسم الموقع أولاً.');
 
-    const selectedRegion = document.getElementById('contract-region-select').value;
     const selectedCities = Array.from(document.querySelectorAll('#contract-cities-tags .tag-item')).map(tag => tag.firstChild.textContent);
 
-    if (!selectedRegion || selectedCities.length === 0) {
-        return alert('الرجاء اختيار منطقة وإضافة مدينة واحدة على الأقل للعقد قبل إضافة المواقع.');
+    if (selectedCities.length === 0) {
+        return alert('الرجاء إضافة مدينة واحدة على الأقل للعقد قبل إضافة المواقع.');
     }
 
     const locationsContainer = document.getElementById('locations-container');
-    const newLocationCard = document.createElement('div');
-    newLocationCard.className = 'location-entry-card';
-    
-    const cityOptions = selectedCities.map(c => `<option value="${c}">${c}</option>`).join('');
+    // إنشاء كائن بيانات فارغ للموقع الجديد مع اسمه
+    const newLocationData = { name: locationName, shifts: [{}] }; // إضافة وردية فارغة تلقائياً
+    // استدعاء الدالة الجديدة لإنشاء الواجهة
+    const newLocationHtml = createLocationGroupHtml(newLocationData, selectedCities);
 
-    // بناء الهيكل الكامل لبطاقة الموقع مع إضافة الحقول الجديدة
-    newLocationCard.innerHTML = `
-        <div class="location-header">
-            <h5>${locationName}</h5>
-            <button class="delete-btn delete-location-card-btn"><i class="ph-bold ph-trash"></i></button>
-        </div>
-        <div class="form-grid" style="grid-template-columns: 1fr 1fr; align-items: end;">
-            <div class="form-group">
-                <label>منطقة هذا الموقع</label>
-                <input type="text" class="location-region-display" value="${selectedRegion}" readonly style="background-color: #e9ecef;">
-            </div>
-            <div class="form-group">
-                <label>مدينة هذا الموقع</label>
-                <select class="location-city-select">${cityOptions}</select>
-            </div>
-        </div>
-        
-        <div class="form-grid" style="grid-template-columns: 3fr 1fr; align-items: end; margin-top: 15px;">
-            <div class="form-group">
-                <label>رابط الموقع (Google Maps)</label>
-                <input type="url" class="location-geofence-link" placeholder="الصق رابط الموقع هنا...">
-            </div>
-            <div class="form-group">
-                <label>نطاق التواجد (متر)</label>
-                <input type="number" class="location-geofence-radius" value="200" placeholder="200">
-            </div>
-        </div>
-        <div class="shifts-container-for-location"></div>
-        <button class="btn btn-secondary add-shift-to-card-btn"><i class="ph-bold ph-plus"></i> إضافة وردية</button>
-    `;
-
-    locationsContainer.appendChild(newLocationCard);
+    locationsContainer.insertAdjacentHTML('beforeend', newLocationHtml);
     input.value = '';
 }
+// نهاية الاستبدال
 
 // --- عند الضغط على زر "حفظ العقد" (النسخة المصححة) ---
 // بداية الاستبدال
@@ -7885,68 +8117,84 @@ if (event.target.closest('#add-location-from-input-btn')) {
     // بداية الاستبدال
 
     if (event.target.closest('#save-contract-btn')) {
-        const saveBtn = event.target.closest('#save-contract-btn');
-        saveBtn.disabled = true;
-        saveBtn.textContent = 'جاري الحفظ...';
+    const saveBtn = event.target.closest('#save-contract-btn');
+    saveBtn.disabled = true;
+    saveBtn.textContent = 'جاري الحفظ...';
 
-        try {
-            const contractId = document.getElementById('contract-id-hidden').value;
-            
-            const locationsData = Array.from(document.querySelectorAll('#locations-container .location-entry-card')).map(locCard => {
-                const shifts = Array.from(locCard.querySelectorAll('.shift-entry-card')).map(shiftCard => {
-                    const days = Array.from(shiftCard.querySelectorAll('.days-selector input:checked')).map(input => input.value);
+    try {
+        const contractId = document.getElementById('contract-id-hidden').value;
+
+        // الخطوة 1: قراءة بيانات كل المواقع من الحاوية
+        const locationsData = Array.from(document.querySelectorAll('#locations-container .location-entry-card')).map(locCard => {
+
+            // الخطوة 2: داخل كل موقع، قم بقراءة بيانات كل الورديات
+            const shifts = Array.from(locCard.querySelectorAll('.shift-entry-card')).map(shiftCard => {
+
+                // الخطوة 3: داخل كل وردية، قم بقراءة بيانات كل الفترات
+                const periods = Array.from(shiftCard.querySelectorAll('.shift-period-item')).map(periodItem => {
                     return {
-                        name: shiftCard.querySelector('.shift-name').value,
-                        guards_count: parseInt(shiftCard.querySelector('.shift-guards-count').value) || 0,
-                        start_time: shiftCard.querySelector('.shift-start-time').value,
-                        end_time: shiftCard.querySelector('.shift-end-time').value,
-                        work_hours: parseFloat(shiftCard.querySelector('.shift-work-hours').value) || 0,
-                        days: days
+                        start_time: periodItem.querySelector('.shift-start-time').value,
+                        end_time: periodItem.querySelector('.shift-end-time').value
                     };
-                });
+                }).filter(p => p.start_time && p.end_time); // تجاهل أي فترة فارغة
+
+                // لا تقم بحفظ الوردية إذا لم تحتوي على أي فترة صالحة
+                if (periods.length === 0) return null;
+
+                const days = Array.from(shiftCard.querySelectorAll('.days-selector input:checked')).map(input => input.value);
+
                 return {
-                    name: locCard.querySelector('h5').textContent,
-                    region: locCard.querySelector('.location-region-display').value,
-                    city: locCard.querySelector('.location-city-select').value,
-                    // بداية الإضافة: قراءة بيانات النطاق عند الحفظ
-                    geofence_link: locCard.querySelector('.location-geofence-link').value,
-                    geofence_radius: parseInt(locCard.querySelector('.location-geofence-radius').value, 10) || 200,
-                    // نهاية الإضافة
-                    shifts: shifts
+                    name: shiftCard.querySelector('.shift-name').value,
+                    guards_count: parseInt(shiftCard.querySelector('.shift-guards-count').value) || 0,
+                    work_hours: parseFloat(shiftCard.querySelector('.shift-work-hours').value) || 0,
+                    days: days,
+                    periods: periods // <-- هنا يتم حفظ مصفوفة الفترات بالشكل الجديد
                 };
-            });
+            }).filter(Boolean); // تجاهل أي ورديات فارغة
 
-            const contractData = {
-                company_name: document.getElementById('contract-company-name').value,
-                end_date: document.getElementById('contract-end-date').value || null,
-                work_days_policy: document.getElementById('contract-workdays-select').value,
-                region: document.getElementById('contract-region-select').value,
-                city: Array.from(document.querySelectorAll('#contract-cities-tags .tag-item')).map(tag => tag.firstChild.textContent),
-                contract_locations: locationsData,
-                status: 'active'
+            return {
+                name: locCard.querySelector('.location-name-input').value,
+                city: locCard.querySelector('.location-city-select')?.value || '',
+                geofence_link: locCard.querySelector('.location-geofence-link')?.value || null,
+                geofence_radius: parseInt(locCard.querySelector('.location-geofence-radius')?.value, 10) || 200,
+                shifts: shifts
             };
+        });
 
-            if (!contractData.company_name || !contractData.region) {
-                throw new Error('الرجاء تعبئة اسم العميل واختيار المنطقة.');
-            }
+        // الخطوة 4: تجميع بيانات العقد النهائية
+        const contractData = {
+            company_name: document.getElementById('contract-company-name').value,
+            end_date: document.getElementById('contract-end-date').value || null,
+            work_days_policy: document.getElementById('contract-workdays-select').value,
+            region: document.getElementById('contract-region-select').value,
+            city: Array.from(document.querySelectorAll('#contract-cities-tags .tag-item')).map(tag => tag.firstChild.textContent),
+            contract_locations: locationsData, // البيانات الجديدة المجمعة
+            status: 'active'
+        };
 
-            const { error } = contractId
-                ? await supabaseClient.from('contracts').update(contractData).eq('id', contractId)
-                : await supabaseClient.from('contracts').insert([contractData]);
-
-            if (error) throw error;
-            
-            showToast('تم حفظ العقد بنجاح!', 'success');
-            document.getElementById('contract-modal').classList.add('hidden');
-            fetchContracts();
-
-        } catch (error) {
-            alert('حدث خطأ: ' + error.message);
-        } finally {
-            saveBtn.disabled = false;
-            saveBtn.textContent = 'حفظ العقد';
+        if (!contractData.company_name || !contractData.region) {
+            throw new Error('الرجاء تعبئة اسم العميل واختيار المنطقة.');
         }
+
+        // الخطوة 5: إرسال البيانات إلى قاعدة البيانات (إما تحديث أو إنشاء)
+        const { error } = contractId
+            ? await supabaseClient.from('contracts').update(contractData).eq('id', contractId)
+            : await supabaseClient.from('contracts').insert([contractData]);
+
+        if (error) throw error;
+
+        showToast('تم حفظ العقد بنجاح!', 'success');
+        document.getElementById('contract-modal').classList.add('hidden');
+        fetchContracts();
+
+    } catch (error) {
+        alert('حدث خطأ: ' + error.message);
+        console.error('Save Contract Error:', error);
+    } finally {
+        saveBtn.disabled = false;
+        saveBtn.textContent = 'حفظ العقد';
     }
+}
 
 // نهاية الاستبدال
 
@@ -7964,33 +8212,26 @@ if (event.target.closest('.delete-location-card-btn')) {
 }
 
 // عند الضغط على زر "إضافة وردية"
+// بداية الكود
 if (event.target.closest('.add-shift-to-card-btn')) {
     const shiftsContainer = event.target.previousElementSibling;
-    const newShiftEntry = document.createElement('div');
-    newShiftEntry.className = 'shift-entry-card';
-    newShiftEntry.innerHTML = `
-        <button class="delete-btn delete-shift-btn" style="position: static; float: left;"><i class="ph-bold ph-x"></i></button>
-        <div class="form-grid" style="grid-template-columns: repeat(4, 1fr);">
-            <div class="form-group"><label>مسمى الوردية</label><input type="text" class="shift-name" placeholder="Shift A"></div>
-            <div class="form-group"><label>عدد الحراس</label><input type="number" class="shift-guards-count" value="1" min="1"></div>
-            <div class="form-group"><label>من ساعة</label><input type="time" class="shift-start-time"></div>
-            <div class="form-group"><label>إلى ساعة</label><input type="time" class="shift-end-time"></div>
-        </div>
-        <div class="form-grid" style="grid-template-columns: 1fr 3fr;">
-             <div class="form-group"><label>ساعات العمل</label><input type="number" class="shift-work-hours" value="0" readonly style="background-color: #e9ecef;"></div>
-             <div class="form-group"><label>أيام العمل</label><div class="days-selector">
-                ${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(day => `<label><input type="checkbox" value="${day}"> ${day.replace('Sun','الأحد').replace('Mon','الاثنين').replace('Tue','الثلاثاء').replace('Wed','الأربعاء').replace('Thu','الخميس').replace('Fri','الجمعة').replace('Sat','السبت')}</label>`).join('')}
-            </div></div>
-        </div>
-    `;
-    shiftsContainer.appendChild(newShiftEntry);
+    // استدعاء الدالة الجديدة لإنشاء وردية فارغة
+    const newShiftHtml = createShiftGroupHtml();
+    shiftsContainer.insertAdjacentHTML('beforeend', newShiftHtml);
 }
+// نهاية الكود
 
 // عند الضغط على زر "حذف الوردية"
 if (event.target.closest('.delete-shift-btn')) {
     event.target.closest('.shift-entry-card').remove();
 }
 
+
+
+// --- عند الضغط على زر "حذف فترة" ---
+if (event.target.closest('.delete-period-btn')) {
+    event.target.closest('.shift-period-item').remove();
+}
 
 // --- معالجات الأوامر (Click Handlers) الجديدة ---
 
@@ -9267,23 +9508,37 @@ async function loadSupervisorDirectivesHistory() {
 // بداية الإضافة
 // --- منطق تسجيل الخروج ---
 if (event.target.closest('#logout-btn, #logout-btn-mobile')) {
-    event.preventDefault(); // منع السلوك الافتراضي للرابط
-    
+    console.log('1. Logout button clicked.');
+    event.preventDefault();
+
     if (confirm('هل أنت متأكد من رغبتك في تسجيل الخروج؟')) {
-        const { error } = await supabaseClient.auth.signOut();
-        
-        if (error) {
-            alert('حدث خطأ أثناء تسجيل الخروج: ' + error.message);
-        } else {
-            // مسح أي بيانات محفوظة للمستخدم من الجلسة الحالية
+        try {
+            console.log('2. User confirmed. Calling signOut()...');
+            const { error } = await supabaseClient.auth.signOut();
+            console.log('3. signOut() completed. Supabase error:', error);
+
+            if (error && !error.message.includes('Session from session_id claim in JWT does not exist')) {
+                throw error;
+            }
+
+            console.log('4. Clearing client-side session...');
             currentUser = null;
-            sessionStorage.removeItem('currentUser');
-            
-            // إعادة تحميل الصفحة للعودة إلى شاشة تسجيل الدخول
-            location.reload();
+            sessionStorage.clear();
+            localStorage.removeItem('admin_session');
+
+            console.log('5. Setting just_logged_out flag and redirecting...');
+            sessionStorage.setItem('just_logged_out', 'true');
+            window.location.href = '/';
+
+        } catch (err) {
+            alert('حدث خطأ أثناء تسجيل الخروج: ' + err.message);
+            console.error('Logout failed with unexpected error:', err);
         }
+    } else {
+        console.log('User cancelled logout.');
     }
 }
+
 // نهاية الإضافة
     // بداية الإضافة: منطق تعديل وحذف التغطيات
 
@@ -9791,68 +10046,67 @@ if (requestActionBtn) {
 // نهاية الإضافة
 
     // --- عند الضغط على زر "عرض الشواغر المتاحة" (النسخة الصحيحة) ---
-    const viewSlotsBtn = event.target.closest('#view-available-slots-btn');
-    if (viewSlotsBtn) {
-        const modal = document.getElementById('available-slots-modal');
-        const body = document.getElementById('available-slots-body');
-        modal.classList.remove('hidden');
-        body.innerHTML = '<p style="text-align: center;">جاري حساب الشواغر المتاحة...</p>';
+    if (event.target.closest('#view-available-slots-btn')) {
+    const modal = document.getElementById('available-slots-modal');
+    const body = document.getElementById('available-slots-body');
+    modal.classList.remove('hidden');
+    body.innerHTML = '<p style="text-align: center;">جاري حساب الشواغر المتاحة...</p>';
 
-        try {
-            const { data: contracts, error: e1 } = await supabaseClient.from('contracts').select('id, company_name, contract_locations').eq('status', 'active');
-            const { data: vacancies, error: e2 } = await supabaseClient.from('job_vacancies').select('contract_id, specific_location, schedule_details');
-            if (e1 || e2) throw new Error('فشل جلب البيانات.');
+    try {
+        const { data: contracts, error: e1 } = await supabaseClient.from('contracts').select('id, company_name, contract_locations').eq('status', 'active');
+        const { data: vacancies, error: e2 } = await supabaseClient.from('job_vacancies').select('contract_id, specific_location, schedule_details');
+        if (e1 || e2) throw new Error('فشل جلب البيانات.');
 
-            let resultsHtml = `<div class="table-container"><table>
-                <thead><tr><th>المشروع (العقد)</th><th>الموقع</th><th>الوردية</th><th>المطلوب</th><th>المُنشأ</th><th>المتبقي</th></tr></thead><tbody>`;
-            let hasAvailableSlots = false;
-            
-            contracts.forEach(contract => {
-                if (!contract.contract_locations) return;
+        let resultsHtml = `<div class="table-container"><table>
+            <thead><tr><th>المشروع (العقد)</th><th>الموقع</th><th>الوردية</th><th>المطلوب</th><th>المنشأ</th><th>المتبقي</th></tr></thead><tbody>`;
+        let hasAvailableSlots = false;
 
-                contract.contract_locations.forEach(location => {
-                    if (!location.shifts) return;
+        contracts.forEach(contract => {
+            if (!contract.contract_locations) return;
 
-                    location.shifts.forEach(shift => {
-                        const requiredGuards = parseInt(shift.guards_count) || 0;
-                        
-                        // حساب عدد الشواغر التي تم إنشاؤها لهذه الوردية تحديداً
-                        const createdVacancies = vacancies.filter(v => {
-                            const vShift = v.schedule_details?.[0];
-                            return v.contract_id === contract.id && 
-                                   v.specific_location === location.name && 
-                                   vShift && vShift.name === shift.name &&
-                                   vShift.start_time === shift.start_time;
-                        }).length;
+            contract.contract_locations.forEach(location => {
+                if (!location.shifts) return;
 
-                        const remaining = requiredGuards - createdVacancies;
+                location.shifts.forEach(shift => {
+                    const requiredGuards = parseInt(shift.guards_count) || 0;
 
-                        if (remaining > 0) {
-                            hasAvailableSlots = true;
-                            resultsHtml += `<tr>
-                                <td>${contract.company_name}</td>
-                                <td>${location.name}</td>
-                                <td>${shift.name || 'وردية'} (من ${shift.start_time || '؟'} إلى ${shift.end_time || '؟'})</td>
-                                <td>${requiredGuards}</td>
-                                <td>${createdVacancies}</td>
-                                <td><strong style="color: #22c55e;">${remaining}</strong></td>
-                            </tr>`;
-                        }
-                    });
+                    const createdVacancies = vacancies.filter(v => {
+                        const vShift = v.schedule_details?.[0];
+                        return v.contract_id === contract.id && 
+                               v.specific_location === location.name && 
+                               vShift && vShift.name === shift.name;
+                    }).length;
+
+                    const remaining = requiredGuards - createdVacancies;
+
+                    if (remaining > 0) {
+                        hasAvailableSlots = true;
+                        // استخدام الدالة الموحدة لعرض الوقت بشكل صحيح
+                        const shiftLabel = `${shift.name || 'وردية'} ${createShiftTimeLabel(shift)}`;
+                        resultsHtml += `<tr>
+                            <td>${contract.company_name}</td>
+                            <td>${location.name}</td>
+                            <td>${shiftLabel}</td>
+                            <td>${requiredGuards}</td>
+                            <td>${createdVacancies}</td>
+                            <td><strong style="color: #22c55e;">${remaining}</strong></td>
+                        </tr>`;
+                    }
                 });
             });
+        });
 
-            if (!hasAvailableSlots) {
-                body.innerHTML = '<p style="text-align: center; padding: 20px;">لا توجد شواغر متاحة حالياً في أي من العقود النشطة.</p>';
-            } else {
-                resultsHtml += '</tbody></table></div>';
-                body.innerHTML = resultsHtml;
-            }
-
-        } catch (error) {
-            body.innerHTML = `<p style="text-align: center; color: red;">${error.message}</p>`;
+        if (!hasAvailableSlots) {
+            body.innerHTML = '<p style="text-align: center; padding: 20px;">لا توجد شواغر متاحة حالياً في أي من العقود النشطة.</p>';
+        } else {
+            resultsHtml += '</tbody></table></div>';
+            body.innerHTML = resultsHtml;
         }
+
+    } catch (error) {
+        body.innerHTML = `<p style="text-align: center; color: red;">${error.message}</p>`;
     }
+}
 // نهاية الإضافة
     // بداية الإضافة: منطق تعديل بيانات الموظف
     // بداية الاستبدال
@@ -9900,9 +10154,9 @@ if (requestActionBtn) {
         if (employee.employment_status === 'بديل راحة') {
             shiftDisplay.value = 'جدول ديناميكي (يغطي أيام الراحة)';
         } else if (assignedVacancy && assignedVacancy.schedule_details?.[0]) {
-            const shift = assignedVacancy.schedule_details[0];
-            shiftDisplay.value = `${shift.name || 'وردية'} (من ${formatTimeAMPM(shift.start_time)} إلى ${formatTimeAMPM(shift.end_time)})`;
-        } else {
+    const shift = assignedVacancy.schedule_details[0];
+    shiftDisplay.value = `${shift.name || 'وردية'} ${createShiftTimeLabel(shift)}`;
+} else {
             shiftDisplay.value = 'لا توجد وردية محددة';
         }
     
@@ -9947,13 +10201,39 @@ if (requestActionBtn) {
 
     // جلب وتعبئة قائمة العقود أولاً
     contractSelect.innerHTML = '<option value="">جاري التحميل...</option>';
-    const { data: contracts } = await supabaseClient.from('contracts').select('id, company_name').eq('status', 'active');
-    contractSelect.innerHTML = '<option value="">غير تابع لعقد</option>';
-    if (contracts) {
-        contractSelect.innerHTML += contracts.map(c => `<option value="${c.id}">${c.company_name}</option>`).join('');
+
+// إعادة استخدام نفس منطق الفلترة من "إضافة موظف"
+const [
+    { data: allContracts, error: e1 },
+    { data: allVacancies, error: e2 },
+    { data: assignedUsers, error: e3 }
+] = await Promise.all([
+    supabaseClient.from('contracts').select('id, company_name').eq('status', 'active'),
+    supabaseClient.from('job_vacancies').select('id, status, contract_id'),
+    supabaseClient.from('users').select('vacancy_id').not('vacancy_id', 'is', null)
+]);
+
+if (e1 || e2 || e3) { console.error("Error fetching data for employee modal", e1 || e2 || e3); }
+
+const occupiedVacancyIds = new Set(assignedUsers.map(u => u.vacancy_id));
+const contractsWithAvailableSlots = new Set();
+allVacancies.forEach(vacancy => {
+    const isAvailable = (vacancy.status === 'open') || (vacancy.status === 'closed' && !occupiedVacancyIds.has(vacancy.id));
+    // إضافة العقد الحالي للموظف إلى القائمة دائماً حتى لو لم يكن به شواغر
+    if ((isAvailable && vacancy.contract_id) || (employee.contract_id && vacancy.contract_id === employee.contract_id)) {
+        contractsWithAvailableSlots.add(vacancy.contract_id);
     }
-    // تحديد العقد الحالي للموظف
-    contractSelect.value = employee.contract_id || '';
+});
+
+const filteredContracts = allContracts.filter(contract => contractsWithAvailableSlots.has(contract.id));
+
+contractSelect.innerHTML = '<option value="">غير تابع لعقد</option>';
+if (filteredContracts.length > 0) {
+    contractSelect.innerHTML += filteredContracts.map(c => `<option value="${c.id}">${c.company_name}</option>`).join('');
+}
+
+// تحديد العقد الحالي للموظف
+contractSelect.value = employee.contract_id || '';
 
     // الآن، نقوم بفلترة وجلب الشواغر بناءً على العقد المحدد
     vacancySelect.innerHTML = '<option value="">جاري تحميل الشواغر...</option>';
@@ -10008,20 +10288,21 @@ if (requestActionBtn) {
 
     // 4. أخيراً، نقوم بتعبئة قائمة الشواغر المفلترة
     vacancySelect.innerHTML = '<option value="">غير مرتبط بشاغر</option>';
-        if (relevantVacancies.length > 0) {
-            vacancySelect.innerHTML += relevantVacancies.filter(v => v.schedule_details && v.schedule_details.length > 0).map(v => {
-                const shift = v.schedule_details[0]; // لم نعد بحاجة لـ ? هنا
-                const shiftName = shift.name || 'وردية';
-                const startTime = formatTimeAMPM(shift.start_time);
-                const endTime = formatTimeAMPM(shift.end_time);
-                const shiftText = `${shiftName} (${startTime} - ${endTime})`;
-                const optionText = `${v.project} - ${v.specific_location || 'موقع عام'} - ${shiftText}`;
-                return `<option value="${v.id}">${optionText}</option>`;
-            }).join('');
-        }
+        // بداية الاستبدال
+if (relevantVacancies.length > 0) {
+    vacancySelect.innerHTML += relevantVacancies.map(v => {
+        const shift = v.schedule_details?.[0];
+        const shiftName = shift?.name || 'وردية';
+        // استخدام الدالة الموحدة لعرض الوقت بشكل صحيح
+        const shiftText = `${shiftName} ${createShiftTimeLabel(shift)}`;
+        const optionText = `${v.project} - ${v.specific_location || 'موقع عام'} - ${shiftText}`;
+        return `<option value="${v.id}">${optionText}</option>`;
+    }).join('');
+}
 
-        // 5. تحديد الشاغر الحالي للموظف في القائمة
-        vacancySelect.value = assignedVacancyId || '';
+// 5. تحديد الشاغر الحالي للموظف في القائمة
+vacancySelect.value = assignedVacancyId || '';
+// نهاية الاستبدال
         // بداية الإضافة: تحديث فوري لحقول العرض بناءً على الشاغر المحدد مسبقاً
 const finalSelectedVacancyId = vacancySelect.value;
 if (finalSelectedVacancyId) {
@@ -10040,7 +10321,7 @@ if (finalSelectedVacancyId) {
         const shift = vacancyData.schedule_details?.[0];
         const shiftDisplay = document.getElementById('employee-shift-display');
         if (shift) {
-            shiftDisplay.value = `${shift.name || 'وردية'} (من ${formatTimeAMPM(shift.start_time)} إلى ${formatTimeAMPM(shift.end_time)})`;
+            shiftDisplay.value = `${shift.name || 'وردية'} ${createShiftTimeLabel(shift)}`;
         } else {
             shiftDisplay.value = 'لا توجد تفاصيل وردية لهذا الشاغر';
         }
@@ -10310,36 +10591,56 @@ if (event.target.closest('#add-employee-btn')) {
 
     // جلب العقود والشواغر
     const contractSelect = document.getElementById('employee-contract');
-    const vacancySelect = document.getElementById('employee-vacancy');
-    contractSelect.innerHTML = '<option value="">جاري التحميل...</option>';
-    vacancySelect.innerHTML = '<option value="">جاري التحميل...</option>';
+const vacancySelect = document.getElementById('employee-vacancy');
+contractSelect.innerHTML = '<option value="">جاري التحميل...</option>';
+vacancySelect.innerHTML = '<option value="">جاري التحميل...</option>';
 
-    const [{ data: contracts }, { data: vacancies }] = await Promise.all([
-            supabaseClient.from('contracts').select('id, company_name').eq('status', 'active'),
-            supabaseClient.from('job_vacancies').select('id, project, specific_location, schedule_details').eq('status', 'open')
-        ]);
+const [
+    { data: allContracts, error: e1 },
+    { data: allVacancies, error: e2 },
+    { data: assignedUsers, error: e3 }
+] = await Promise.all([
+    supabaseClient.from('contracts').select('id, company_name').eq('status', 'active'),
+    supabaseClient.from('job_vacancies').select('id, status, contract_id'),
+    supabaseClient.from('users').select('vacancy_id').not('vacancy_id', 'is', null)
+]);
 
-    contractSelect.innerHTML = '<option value="">غير تابع لعقد</option>';
-    if (contracts) contractSelect.innerHTML += contracts.map(c => `<option value="${c.id}">${c.company_name}</option>`).join('');
-    
-    vacancySelect.innerHTML = '<option value="">غير مرتبط بشاغر</option>';
-    if (vacancies) {
-        // بداية الاستبدال
-        const vacancyOptions = vacancies.filter(v => v.schedule_details && v.schedule_details.length > 0).map(v => {
+if (e1 || e2 || e3) { console.error("Error fetching data for employee modal", e1 || e2 || e3); }
+
+// تحديد الشواغر المشغولة
+const occupiedVacancyIds = new Set(assignedUsers.map(u => u.vacancy_id));
+// تحديد العقود التي بها شواغر متاحة
+const contractsWithAvailableSlots = new Set();
+allVacancies.forEach(vacancy => {
+    const isAvailable = (vacancy.status === 'open') || (vacancy.status === 'closed' && !occupiedVacancyIds.has(vacancy.id));
+    if (isAvailable && vacancy.contract_id) {
+        contractsWithAvailableSlots.add(vacancy.contract_id);
+    }
+});
+
+// تصفية العقود بناءً على الشواغر المتاحة
+const filteredContracts = allContracts.filter(contract => contractsWithAvailableSlots.has(contract.id));
+
+contractSelect.innerHTML = '<option value="">غير تابع لعقد</option>';
+if (filteredContracts.length > 0) {
+    contractSelect.innerHTML += filteredContracts.map(c => `<option value="${c.id}">${c.company_name}</option>`).join('');
+}
+
+// عرض كل الشواغر المفتوحة في البداية
+vacancySelect.innerHTML = '<option value="">غير مرتبط بشاغر</option>';
+const openVacancies = allVacancies.filter(v => v.status === 'open');
+if (openVacancies.length > 0) {
+    // نحتاج لجلب تفاصيل الشواغر المفتوحة لعرضها بشكل صحيح
+    const { data: detailedOpenVacancies } = await supabaseClient.from('job_vacancies').select('id, project, specific_location, schedule_details').in('id', openVacancies.map(v => v.id));
+    if(detailedOpenVacancies) {
+        const vacancyOptions = detailedOpenVacancies.map(v => {
             const shift = v.schedule_details?.[0];
-            let shiftText = 'بدون وردية محددة';
-            if (shift) {
-                const shiftName = shift.name || 'وردية';
-                const startTime = formatTimeAMPM(shift.start_time);
-                const endTime = formatTimeAMPM(shift.end_time);
-                shiftText = `${shiftName} (${startTime} - ${endTime})`;
-            }
-            const optionText = `${v.project} - ${v.specific_location || 'موقع عام'} - ${shiftText}`;
-            return `<option value="${v.id}">${optionText}</option>`;
+            const shiftText = `${shift?.name || 'وردية'} ${createShiftTimeLabel(shift)}`;
+            return `<option value="${v.id}">${v.project} - ${v.specific_location || 'موقع عام'} - ${shiftText}</option>`;
         }).join('');
-// نهاية الاستبدال
         vacancySelect.innerHTML += vacancyOptions;
     }
+}
 
     modal.classList.remove('hidden');
 }
@@ -10570,12 +10871,30 @@ if (role === 'حارس أمن') {
 // عند الضغط على زر "إضافة شاغر جديد"
 if (event.target.closest('#add-vacancy-btn')) {
     const modal = document.getElementById('vacancy-modal');
-    // إعادة تعيين الفورم
-    document.getElementById('vacancy-modal-title').textContent = 'إضافة شاغر جديد';
-    document.getElementById('vacancy-id').value = '';
-    modal.querySelector('form')?.reset(); // طريقة أسهل لإعادة تعيين النموذج
 
-    // جلب العقود النشطة لملء القائمة
+    // --- إعادة التعيين اليدوي الشامل ---
+    document.getElementById('vacancy-modal-title').textContent = 'إضافة شاغر جديد';
+    document.getElementById('vacancy-id').value = ''; // مسح ID لضمان وضع الإنشاء
+
+    // إعادة تعيين الحقول الرئيسية
+    document.getElementById('vacancy-title').value = 'حارس أمن';
+    document.getElementById('vacancy-project').value = '';
+    document.getElementById('vacancy-city').value = '';
+    document.getElementById('vacancy-status').value = 'open';
+
+    // إعادة تعيين حقول الراتب
+    document.getElementById('vacancy-base-salary').value = 0;
+    document.getElementById('vacancy-housing').value = 0;
+    document.getElementById('vacancy-transport').value = 0;
+    document.getElementById('vacancy-other').value = 0;
+
+    // إخفاء وإعادة تعيين القوائم المنسدلة التابعة
+    document.getElementById('vacancy-location-group').classList.add('hidden');
+    document.getElementById('vacancy-shift-group').classList.add('hidden');
+    document.getElementById('vacancy-location-select').innerHTML = '';
+    document.getElementById('vacancy-shift-select').innerHTML = '';
+
+    // جلب العقود النشطة لملء القائمة (هذا الجزء يبقى كما هو)
     const contractSelect = document.getElementById('vacancy-contract');
     contractSelect.innerHTML = '<option value="">جاري تحميل العقود...</option>';
     const { data: contracts } = await supabaseClient.from('contracts').select('id, company_name').eq('status', 'active');
@@ -10583,14 +10902,15 @@ if (event.target.closest('#add-vacancy-btn')) {
         contractSelect.innerHTML = '<option value="">بدون عقد محدد</option>';
         contractSelect.innerHTML += contracts.map(c => `<option value="${c.id}">${c.company_name}</option>`).join('');
     }
-    
+    contractSelect.value = ""; // التأكد من أن القائمة تبدأ من الخيار الافتراضي
+
     modal.classList.remove('hidden');
 }
 
 // --- عند الضغط على زر "تعديل شاغر" (النسخة النهائية والمصححة) ---
+// بداية الاستبدال
 if (event.target.closest('.edit-vacancy-btn')) {
     const vacancyId = event.target.closest('.edit-vacancy-btn').dataset.id;
-    // جلب الشاغر مع بيانات العقد المرتبط به
     const { data: vacancy, error } = await supabaseClient
         .from('job_vacancies')
         .select('*, contracts(*)')
@@ -10603,36 +10923,34 @@ if (event.target.closest('.edit-vacancy-btn')) {
 
     const modal = document.getElementById('vacancy-modal');
 
-    // --- 1. تعبئة المعلومات الأساسية ---
+    // 1. تعبئة المعلومات الأساسية
     document.getElementById('vacancy-modal-title').textContent = 'تعديل شاغر وظيفي';
     document.getElementById('vacancy-id').value = vacancy.id;
     document.getElementById('vacancy-title').value = vacancy.title;
     document.getElementById('vacancy-project').value = vacancy.project;
-    document.getElementById('vacancy-city').value = vacancy.location; // "location" هو حقل المدينة
+    document.getElementById('vacancy-city').value = vacancy.location; 
     document.getElementById('vacancy-status').value = vacancy.status;
 
-    // --- 2. تعبئة تفاصيل الراتب ---
+    // 2. تعبئة تفاصيل الراتب
     document.getElementById('vacancy-base-salary').value = vacancy.base_salary;
     document.getElementById('vacancy-housing').value = vacancy.housing_allowance;
     document.getElementById('vacancy-transport').value = vacancy.transport_allowance;
     document.getElementById('vacancy-other').value = vacancy.other_allowances;
 
-    // --- 3. التعامل مع القوائم المنسدلة (العقد، الموقع، الوردية) ---
+    // 3. التعامل مع القوائم المنسدلة
     const contractSelect = document.getElementById('vacancy-contract');
     const locationGroup = document.getElementById('vacancy-location-group');
     const locationSelect = document.getElementById('vacancy-location-select');
     const shiftGroup = document.getElementById('vacancy-shift-group');
     const shiftSelect = document.getElementById('vacancy-shift-select');
 
-    // جلب كل العقود لملء القائمة
     const { data: contracts } = await supabaseClient.from('contracts').select('id, company_name, contract_locations');
     contractSelect.innerHTML = '<option value="">-- اختر عقداً --</option>';
     if (contracts) {
         contractSelect.innerHTML += contracts.map(c => `<option value="${c.id}">${c.company_name}</option>`).join('');
     }
-    contractSelect.value = vacancy.contract_id; // تحديد العقد الحالي للشاغر
+    contractSelect.value = vacancy.contract_id;
 
-    // إظهار وتعبئة قائمة المواقع بناءً على العقد المحدد
     const selectedContractData = contracts.find(c => c.id === vacancy.contract_id);
     if (selectedContractData && selectedContractData.contract_locations) {
         locationSelect.innerHTML = '<option value="">-- اختر موقعاً --</option>';
@@ -10643,16 +10961,15 @@ if (event.target.closest('.edit-vacancy-btn')) {
         locationGroup.classList.remove('hidden');
     }
 
-    // إظهار وتعبئة قائمة الورديات بناءً على الموقع المحدد
     if (vacancy.specific_location && selectedContractData && selectedContractData.contract_locations) {
         const selectedLocationData = selectedContractData.contract_locations.find(l => l.name === vacancy.specific_location);
         if (selectedLocationData && selectedLocationData.shifts) {
             shiftSelect.innerHTML = '<option value="">-- اختر وردية --</option>';
             selectedLocationData.shifts.forEach(shift => {
-                const shiftLabel = `${shift.name || 'وردية'} (من ${shift.start_time || '?'} إلى ${shift.end_time || '?'})`;
+                const shiftLabel = `${shift.name || 'وردية'} ${createShiftTimeLabel(shift)}`;
                 shiftSelect.innerHTML += `<option value='${JSON.stringify(shift)}'>${shiftLabel}</option>`;
             });
-            // تحديد الوردية الحالية للشاغر
+
             if (vacancy.schedule_details && vacancy.schedule_details[0]) {
                 shiftSelect.value = JSON.stringify(vacancy.schedule_details[0]);
             }
@@ -10662,6 +10979,7 @@ if (event.target.closest('.edit-vacancy-btn')) {
 
     modal.classList.remove('hidden');
 }
+// نهاية الاستبدال
 
 // بداية الاستبدال
 // بداية الاستبدال
@@ -11187,7 +11505,34 @@ if (actionBtn && actionBtn.dataset.requestId) {
 // ===================== نهاية الإضافة =====================
     
 });
-
+// بداية الإضافة: مستمع أوامر منفصل لحساب الساعات تلقائياً
+document.body.addEventListener('change', function(event) {
+    const target = event.target;
+    // إعادة حساب إجمالي ساعات الوردية عند تغيير أي حقل وقت
+    if (target.classList.contains('shift-time-input')) {
+        const shiftCard = target.closest('.shift-entry-card');
+        if (shiftCard) {
+            let totalHours = 0;
+            const periods = shiftCard.querySelectorAll('.shift-period-item');
+            periods.forEach(period => {
+                const startTime = period.querySelector('.shift-start-time').value;
+                const endTime = period.querySelector('.shift-end-time').value;
+                if (startTime && endTime) {
+                    const start = new Date(`1970-01-01T${startTime}`);
+                    const end = new Date(`1970-01-01T${endTime}`);
+                    let diff = (end - start) / (1000 * 60 * 60);
+                    if (diff < 0) { diff += 24; }
+                    totalHours += diff;
+                }
+            });
+            const workHoursInput = shiftCard.querySelector('.shift-work-hours');
+            if(workHoursInput) {
+               workHoursInput.value = totalHours.toFixed(2);
+            }
+        }
+    }
+});
+// نهاية الإضافة
 }); // <-- هذا هو القوس المهم الذي كان مفقوداً ويغلق DOMContentLoaded
 
 // --- 3. منطق تسجيل الدخول (خارج DOMContentLoaded لأنه يتعامل مع نموذج جاهز) ---
@@ -11585,6 +11930,7 @@ document.body.addEventListener('keyup', function(event) {
     if (event.target.id === 'contract-filter-search') {
         fetchContracts();
     }
+    
 });
 // ==========================================================
 // ===                نهاية الإضافة                      ===
@@ -11595,3 +11941,4 @@ document.body.addEventListener('keyup', function(event) {
 // ------------------------------------
 
 // =========================================================================
+// بداية الإضافة: دالة التشخيص اليدوي
