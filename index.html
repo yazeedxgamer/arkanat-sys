@@ -1054,7 +1054,13 @@
 </div>
     <div class="report-filters-card" style="margin-bottom: 20px; margin-top: 20px;">
     <div class="filter-grid" style="grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));">
-
+        <div class="filter-group filter-group-toggle">
+    <label for="ga-filter-active-shifts-toggle" class="toggle-switch">
+        <input type="checkbox" id="ga-filter-active-shifts-toggle" class="ga-filter-control">
+        <span class="slider"></span>
+        <span class="label-text">عرض الورديات الفعالة حالياً فقط</span>
+    </label>
+</div>
         <div class="filter-group">
             <label>بحث بالاسم أو الهوية</label>
             <input type="text" id="ga-filter-search" class="ga-filter-control" placeholder="ابحث...">
@@ -1074,19 +1080,14 @@
         </div>
 
         <div class="filter-group">
-            <label>بداية الوردية (من)</label>
-            <input type="time" id="ga-filter-time-from" class="ga-filter-control">
-        </div>
-
-        <div class="filter-group">
-            <label>بداية الوردية (إلى)</label>
-            <div style="display: flex; align-items: center; gap: 5px;">
-                <input type="time" id="ga-filter-time-to" class="ga-filter-control" style="flex-grow: 1;">
-                <button id="ga-clear-time-filter" class="btn-action" title="مسح فلتر الوقت" style="padding: 8px; border: 1px solid var(--border-color); border-radius: 6px;">
-                    <i class="ph-bold ph-x-circle"></i>
-                </button>
-            </div>
-        </div>
+    <label>فلترة حسب الوردية</label>
+    <select id="ga-filter-by-shift-period" class="ga-filter-control">
+        <option value="">كل الورديات</option>
+        <option value="A">A</option>
+        <option value="B">B</option>
+        <option value="C">C</option>
+    </select>
+</div>
 
         <div class="filter-group">
             <label>المنطقة</label>
