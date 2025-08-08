@@ -3460,3 +3460,105 @@ animation: pulse-glow 1.5s infinite alternate;
     background-color: #8b5cf6; 
 }
 /* نهاية الإضافة */
+/* ======================================= */
+/* ===   تصميم شريط الإعلانات المتوهج   === */
+/* ======================================= */
+
+/* حركة التوهج النابضة */
+@keyframes pulse-glow-banner {
+    0% { box-shadow: 0 0 4px 0px rgba(255, 255, 255, 0.3); }
+    50% { box-shadow: 0 0 16px 4px rgba(255, 255, 255, 0.5); }
+    100% { box-shadow: 0 0 4px 0px rgba(255, 255, 255, 0.3); }
+}
+
+#announcement-banner {
+    padding: 12px 20px;
+    color: white;
+    font-weight: 700;
+    font-size: 1.05rem;
+    display: flex;
+    justify-content: center; /* توسط المحتوى */
+    align-items: center;
+    gap: 15px;
+    border-bottom: 2px solid rgba(0,0,0,0.2);
+    /* تطبيق حركة التوهج */
+    animation: pulse-glow-banner 4s infinite ease-in-out;
+}
+
+#announcement-banner i {
+    font-size: 1.6rem;
+    /* إضافة ظل خفيف للأيقونة */
+    text-shadow: 0 1px 3px rgba(0,0,0,0.3);
+}
+/* ======================================= */
+/* ===   تصميم زر تفعيل الفلترة         === */
+/* ======================================= */
+
+/* الحاوية الرئيسية لزر التبديل */
+.filter-group-toggle {
+    grid-column: 1 / -1; /* لجعل الزر يمتد على عرض الفلاتر بالكامل */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: #1f2937;
+    border-radius: 8px;
+    padding: 8px 0;
+    border: 1px solid #374151;
+    margin-bottom: 10px;
+}
+
+/* الليبل الذي يعمل كزر تفاعلي */
+.toggle-switch {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    cursor: pointer;
+    gap: 12px;
+}
+
+/* إخفاء مربع الاختيار الافتراضي */
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+/* نص العنوان بجانب الزر */
+.toggle-switch .label-text {
+    font-weight: 700;
+    color: #f9fafb;
+    font-size: 1.1rem;
+}
+
+/* مسار التبديل (الجزء الخلفي من الزر) */
+.slider {
+    position: relative;
+    width: 44px;
+    height: 24px;
+    background-color: #4b5563; /* لون الزر وهو مطفأ */
+    border-radius: 34px;
+    transition: background-color 0.3s;
+}
+
+/* المقبض الدائري للزر */
+.slider::before {
+    content: "";
+    position: absolute;
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    border-radius: 50%;
+    transition: transform 0.3s;
+}
+
+/* تصميم الزر عند تفعيله */
+.toggle-switch input:checked + .slider {
+    background-color: var(--accent-color); /* اللون الأزرق عند التفعيل */
+}
+
+/* تحريك المقبض الدائري عند تفعيل الزر */
+.toggle-switch input:checked + .slider::before {
+    transform: translateX(20px);
+}
