@@ -1,16 +1,4 @@
-// ==========================================================
-// ===      بداية الإضافة: إعادة توجيه اللوكال هوست دائماً      ===
-// ==========================================================
-const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
-// إذا كنا على اللوكال هوست والمسار ليس هو الصفحة الرئيسية
-if (isLocalhost && window.location.pathname !== '/') {
-    // قم بإعادة التوجيه إلى الصفحة الرئيسية
-    window.location.replace(window.location.origin);
-}
-// ==========================================================
-// ===                   نهاية الإضافة                   ===
-// ==========================================================
 // ==========================================================
 // ===          بداية الإضافة: دوال تنسيق التاريخ الميلادي          ===
 // ==========================================================
@@ -61,6 +49,43 @@ function formatGregorianDateTime(dateInput) {
         console.error("DateTime formatting error:", e);
         return 'غير محدد';
     }
+}
+
+/**
+ * دالة مساعدة للتحقق مما إذا كانت وردية الحارس فعالة الآن
+ * @param {object} guard - كائن بيانات الحارس مع تفاصيل شاغره الوظيفي
+ * @returns {boolean} - true إذا كانت الوردية فعالة الآن
+ */
+function isGuardShiftActiveNow(guard) {
+    const schedule = guard.job_vacancies?.schedule_details?.[0];
+    const now = new Date();
+    const currentTime = now.toTimeString().substring(0, 5);
+    const currentDay = now.toLocaleString('en-US', { weekday: 'short' });
+
+    if (!schedule || !schedule.days || !schedule.days.includes(currentDay)) {
+        return false; // ليس لديه وردية مجدولة اليوم
+    }
+
+    const periods = schedule.periods || [schedule];
+    for (const period of periods) {
+        const startTime = period.start_time;
+        const endTime = period.end_time;
+
+        if (!startTime || !endTime) continue;
+
+        // التعامل مع الورديات الليلية التي تمتد لليوم التالي
+        if (endTime < startTime) {
+            if (currentTime >= startTime || currentTime < endTime) {
+                return true;
+            }
+        } else { // التعامل مع الورديات النهارية العادية
+            if (currentTime >= startTime && currentTime < endTime) {
+                return true;
+            }
+        }
+    }
+
+    return false; // ليس ضمن أي فترة عمل فعالة الآن
 }
 
 // نهاية الإضافة
@@ -265,6 +290,127 @@ function formatGregorianDateTime(dateInput) {
     } finally {
         exportBtn.disabled = false;
         exportBtn.innerHTML = '<i class="ph-bold ph-file-xls"></i> تصدير Excel';
+    }
+}
+
+/**
+ * دالة مركزية لتهيئة واجهة المستخدم والإشتراكات المباشرة بعد تسجيل الدخول
+ * @param {object} userProfile - بيانات المستخدم الذي سجل دخوله
+ */
+function initializeUserSession(userProfile) {
+    currentUser = userProfile;
+    sessionStorage.setItem('currentUser', JSON.stringify(userProfile));
+    updateUIVisibility(currentUser.role);
+    document.getElementById('login-page').style.display = 'none';
+    document.querySelector('.dashboard-container').classList.remove('hidden');
+    const userProfileSpan = document.querySelector('.user-profile span');
+    if (userProfileSpan) userProfileSpan.textContent = `مرحباً، ${currentUser.name}`;
+
+    // عرض الإعلان الحالي عند فتح الصفحة
+    displayActiveAnnouncements();
+
+    // --- الجزء الأهم: الاشتراك المباشر في قناة الإعلانات ---
+    supabaseClient
+        .channel('public:announcements')
+        .on(
+            'postgres_changes',
+            { event: '*', schema: 'public', table: 'announcements' },
+            (payload) => {
+                console.log('Real-time announcement update received!', payload);
+                // عند وصول أي تحديث، قم بإعادة تشغيل دالة عرض الإعلانات
+                displayActiveAnnouncements();
+            }
+        )
+        .subscribe();
+
+    console.log('Subscribed to real-time announcements channel.');
+
+    updateNotificationBell();
+    setInterval(updateNotificationBell, 60000);
+
+    handleRouteChange(true);
+}
+
+
+async function refreshCurrentUser() {
+    if (currentUser && currentUser.id) {
+        const { data, error } = await supabaseClient.from('users').select('*').eq('id', currentUser.id).single();
+        if (data) {
+            currentUser = data;
+            sessionStorage.setItem('currentUser', JSON.stringify(data));
+        }
+    }
+}
+
+async function handleRouteChange(isInitialLoad = false) {
+    if (!isInitialLoad) {
+        await refreshCurrentUser();
+    }
+
+    if (activeSubscription) {
+        supabaseClient.removeChannel(activeSubscription);
+        activeSubscription = null;
+    }
+    if (pageRefreshInterval) {
+        clearInterval(pageRefreshInterval);
+        pageRefreshInterval = null;
+    }
+
+    const path = window.location.pathname;
+    let linkToActivate = document.querySelector(`.sidebar-nav a[href="${path}"]`);
+
+    if (path === '/' || path === '/index.html' || !linkToActivate) {
+        linkToActivate = document.querySelector('.sidebar-nav li[style*="display: block"] a');
+        if (linkToActivate) {
+            history.replaceState(null, '', linkToActivate.getAttribute('href'));
+        }
+    }
+
+    if (!linkToActivate) return;
+
+    const targetPageId = linkToActivate.dataset.page;
+    sessionStorage.setItem('lastVisitedPage', targetPageId);
+
+    document.getElementById('main-title').textContent = linkToActivate.querySelector('span').textContent;
+    document.querySelectorAll('.sidebar-nav a').forEach(navLink => navLink.classList.remove('active'));
+    linkToActivate.classList.add('active');
+
+    document.querySelectorAll('.page-content').forEach(page => page.classList.add('hidden'));
+    const targetPage = document.getElementById(targetPageId);
+
+    if (targetPage) {
+        targetPage.classList.remove('hidden');
+
+        const pageLoaders = {
+            'page-geo': () => { initializeFilters('geo'); initializeMap(); },
+            'page-employees': () => { initializeFilters('hr-employees'); loadEmployeeTabData(); },
+            'page-hr-attendance-log': () => { initializeFilters('hr-attlog'); loadHrAttendanceLogPage(); },
+            'page-attendance-management': () => { initializeFilters('hr-attmgmt'); loadAttendanceManagementPage(); },
+            'page-payroll': () => {
+                document.getElementById('payroll-results-container').innerHTML = '<p style="text-align: center;">الرجاء اختيار الشهر والضغط على "توليد المسير" لعرض البيانات.</p>';
+                initializeFilters('hr-payroll');
+            },
+            'page-vacancies': () => { initializeFilters('vc'); loadVacancyTabData(); },
+            'page-contracts': () => { initializeContractFilters(); fetchContracts(); },
+            'page-penalties': () => { initializeFilters('hr-penalties'); loadPenaltiesPage(); },
+            'page-coverage': () => { loadCoveragePage(); pageRefreshInterval = setInterval(loadCoveragePage, 60000); },
+            'page-supervisor-applications': () => { loadSupervisorApplicationsPage(); pageRefreshInterval = setInterval(loadSupervisorApplicationsPage, 60000); },
+            'page-attendance': loadAttendancePage, 'page-my-requests': loadMyRequestsPage, 'page-permission-requests': loadPermissionRequests,
+            'page-ops-review-requests': loadOpsReviewRequestsPage, 'page-visits': fetchVisits, 'page-my-profile': loadMyProfilePage,
+            'page-admin-dashboard': loadAdminDashboardPage, 'page-announcements': loadAnnouncementsPage, 'page-user-management': loadUserManagementPage,
+            'page-ops-nominees': loadOpsNomineesPage, 'page-directives-ops': loadOpsDirectivesPage, 'page-guard-attendance': () => { initializeGuardAttendanceFilters(); loadGuardAttendancePage(); },
+            'page-patrol': loadSupervisorPatrolPage, 'page-supervisor-schedules': loadSupervisorSchedulesPage, 'page-supervisor-permission-requests': loadSupervisorPermissionRequestsPage,
+            'page-supervisor-coverage-apps': loadSupervisorCoverageAppsPage, 'page-finance-coverage': loadFinanceCoveragePage,
+            'page-hr-data-entry': () => { document.getElementById('import-results-container').innerHTML = ''; }, 'page-official-holidays': loadHolidaysPage,
+            'page-hr-ops-hiring': loadHrOpsHiringPage, 'page-coverage-requests': loadCoverageRequestsPage, 'page-leave-requests': loadLeaveRequests,
+            'page-resignation-requests': loadResignationRequests, 'page-loan-requests': loadLoanRequests, 'page-requests-archive': () => loadArchivePage('leave'),
+            'page-my-directives': loadMyDirectivesPage, 'page-my-schedule': loadMySchedulePage, 'page-my-visits': loadMyVisitsPage,
+            'page-hr-sms': () => {} // صفحة فارغة لا تحتاج لدالة تحميل
+        };
+
+        if (pageLoaders[targetPageId]) {
+            pageLoaders[targetPageId]();
+        }
     }
 }
 // ==========================================================
@@ -768,47 +914,69 @@ window.addEventListener('error', function(event) {
     });
 });
 async function displayActiveAnnouncements() {
+    if (announcementCheckInterval) {
+        clearInterval(announcementCheckInterval);
+        announcementCheckInterval = null;
+    }
+
     const banner = document.getElementById('announcement-banner');
     if (!banner) return;
 
-    // إخفاء الشريط مبدئياً
     banner.classList.add('hidden');
     banner.innerHTML = '';
 
     try {
+        // --- التعديل هنا: استخدام التوقيت العالمي الموحد (UTC) ---
         const now = new Date().toISOString();
-        
-        // جلب الإعلانات التي تكون نشطة والآن بين تاريخ البداية والنهاية
+
         const { data: activeAnnouncements, error } = await supabaseClient
             .from('announcements')
-            .select('content, type')
+            .select('content, type, end_date')
             .eq('is_active', true)
-            .lte('start_date', now) // تاريخ البداية أصغر من أو يساوي الآن
-            .gte('end_date', now)   // تاريخ النهاية أكبر من أو يساوي الآن
+            .lte('start_date', now)
+            .gte('end_date', now)
             .order('created_at', { ascending: false });
 
         if (error) throw error;
 
-        // إذا وجدنا إعلاناً فعالاً، نعرض أول واحد فقط
         if (activeAnnouncements && activeAnnouncements.length > 0) {
             const announcement = activeAnnouncements[0];
-            
-            // تحديث محتوى وتصميم الشريط
+
+            const icons = {
+                info: 'ph-info',
+                warning: 'ph-warning-circle',
+                critical: 'ph-warning-diamond'
+            };
+            const iconClass = icons[announcement.type] || 'ph-info';
+
             banner.innerHTML = `
+                <i class="ph-bold ${iconClass}"></i>
                 <p>${announcement.content}</p>
-                <button id="close-announcement-btn" title="إخفاء الإعلان">X</button>
+                <button id="close-announcement-btn" title="إخفاء الإعلان">
+                    <i class="ph-bold ph-x"></i>
+                </button>
             `;
-            // إزالة كلاسات الألوان القديمة وإضافة الجديد
+
             banner.classList.remove('type-info', 'type-warning', 'type-critical');
             banner.classList.add(`type-${announcement.type}`);
 
-            // إظهار الشريط
             banner.classList.remove('hidden');
 
-            // إضافة وظيفة لزر الإغلاق
             document.getElementById('close-announcement-btn').addEventListener('click', () => {
                 banner.classList.add('hidden');
+                if (announcementCheckInterval) clearInterval(announcementCheckInterval);
             });
+
+            announcementCheckInterval = setInterval(() => {
+                // --- التعديل هنا أيضاً: المقارنة باستخدام التوقيت العالمي ---
+                // يتم تحويل وقت انتهاء الإعلان إلى كائن تاريخ للمقارنة الدقيقة
+                const endDate = new Date(announcement.end_date);
+                // يتم إنشاء كائن تاريخ جديد يمثل الوقت الحالي للمقارنة
+                if (new Date() > endDate) {
+                    console.log('Announcement expired based on UTC, hiding banner.');
+                    displayActiveAnnouncements();
+                }
+            }, 5000);
         }
 
     } catch (err) {
@@ -1140,6 +1308,7 @@ let pageRefreshInterval = null; // مؤقت لتحديث الصفحات تلقا
 let hrDebounceTimer; // مؤقت لتأخير البحث في صفحة الموظفين
 let updateCheckInterval = null; // مؤقت للتحقق الدوري من التحديثات
 let activeSubscription = null; // للاحتفاظ بالاشتراك المباشر الفعال
+let announcementCheckInterval = null; // مؤقت للتحقق من انتهاء الإعلانات
 // بداية الإضافة
 let patrolWatcherId = null; // متغير لتخزين معرّف عملية تتبع الجولة
 // نهاية الإضافة
@@ -1700,28 +1869,23 @@ async function loadGuardAttendancePage() {
     }
 
     try {
-        // --- 1. قراءة قيم الفلاتر من الواجهة ---
         const searchVal = document.getElementById('ga-filter-search').value.toLowerCase();
         const statusVal = document.getElementById('ga-filter-status').value;
         const regionVal = document.getElementById('ga-filter-region').value;
         const cityVal = document.getElementById('ga-filter-city').value;
         const projectVal = document.getElementById('ga-filter-project').value;
         const locationVal = document.getElementById('ga-filter-location').value;
-        const timeFromVal = document.getElementById('ga-filter-time-from').value;
-        const timeToVal = document.getElementById('ga-filter-time-to').value;
+        const shiftPeriodVal = document.getElementById('ga-filter-by-shift-period').value;
+        const isActiveOnly = document.getElementById('ga-filter-active-shifts-toggle').checked;
 
-        // --- 2. بناء استعلام قاعدة البيانات الأولي ---
         let query = supabaseClient
             .from('users')
             .select('id, name, project, location, region, city, employment_status, id_number, job_vacancies!users_vacancy_id_fkey(schedule_details)')
             .eq('role', 'حارس أمن')
             .in('employment_status', ['اساسي', 'تغطية', 'بديل راحة']);
 
-        if (currentUser.role === 'مشرف') {
-            query = createProjectFilter(query, currentUser.project, 'project');
-        } else if (currentUser.role === 'ادارة العمليات') {
-            query = query.eq('region', currentUser.region);
-        }
+        if (currentUser.role === 'مشرف') { query = createProjectFilter(query, currentUser.project, 'project'); } 
+        else if (currentUser.role === 'ادارة العمليات') { query = query.eq('region', currentUser.region); }
 
         if (searchVal) query = query.or(`name.ilike.%${searchVal}%,id_number.ilike.%${searchVal}%`);
         if (regionVal) query = query.eq('region', regionVal);
@@ -1736,54 +1900,150 @@ async function loadGuardAttendancePage() {
         const { data: attendanceRecords, error: attendanceError } = await supabaseClient.from('attendance').select('guard_id, created_at, status, checkout_at').gte('created_at', yesterday);
         if (attendanceError) throw attendanceError;
 
-        const now = new Date();
-        
-        // --- 3. حساب الإحصائيات العامة (هذا الجزء تمت إعادته) ---
-        // (الكود هنا مأخوذ من نسختك الحالية)
-        let presentCount = 0, scheduledRightNowCount = 0, offCount = 0, absentCount = 0, withdrawalCount = 0, permissionCount = 0;
-        const currentTime = now.toTimeString().substring(0, 5);
-        const currentDay = now.toLocaleString('en-US', { weekday: 'short' });
+        let guardsToProcess = guards;
+        if (isActiveOnly) {
+            const now = new Date();
+            const oneHourFromNow = new Date(now.getTime() + 60 * 60 * 1000);
 
-        guards.forEach(g => {
-            const shift = g.job_vacancies?.schedule_details?.[0];
-            let isScheduledNow = false;
-            if (shift && shift.days) {
-                const periods = shift.periods || [shift];
-                for(const period of periods) {
-                    const startTime = period.start_time;
-                    const endTime = period.end_time;
-                    if (endTime < startTime) { isScheduledNow = (currentTime >= startTime || currentTime < endTime); }
-                    else { isScheduledNow = (currentTime >= startTime && currentTime < endTime); }
-                    if(isScheduledNow) break;
+            guardsToProcess = guards.filter(guard => {
+                const latestRecord = attendanceRecords?.filter(r => r.guard_id === guard.id).sort((a,b) => new Date(b.created_at) - new Date(a.created_at))[0];
+                const schedule = guard.job_vacancies?.schedule_details?.[0];
+
+                if (latestRecord && !latestRecord.checkout_at && new Date(latestRecord.created_at).toDateString() === now.toDateString()) {
+                    if (!schedule) return true; 
+                    const periods = schedule.periods || [schedule];
+                    const lastPeriod = periods[periods.length - 1];
+                    if (!lastPeriod || !lastPeriod.end_time) return true;
+
+                    const endTime = new Date();
+                    const [endHours, endMinutes] = lastPeriod.end_time.split(':').map(Number);
+                    endTime.setHours(endHours, endMinutes, 0, 0);
+
+                    const startTimeCheck = new Date(new Date(latestRecord.created_at).setHours(0,0,0,0));
+                    if(endTime < startTimeCheck) endTime.setDate(endTime.getDate() + 1);
+
+                    const gracePeriodEnd = new Date(endTime.getTime() + 30 * 60 * 1000);
+                    return now < gracePeriodEnd;
+                }
+
+                if (!schedule || !schedule.days || !schedule.days.includes(now.toLocaleString('en-US', { weekday: 'short' }))) {
+                    return false;
+                }
+
+                const periods = schedule.periods || [schedule];
+                for (const period of periods) {
+                    const startTime = new Date();
+                    const [startHours, startMinutes] = period.start_time.split(':').map(Number);
+                    startTime.setHours(startHours, startMinutes, 0, 0);
+
+                    const endTime = new Date();
+                    const [endHours, endMinutes] = period.end_time.split(':').map(Number);
+                    endTime.setHours(endHours, endMinutes, 0, 0);
+                    if (endTime <= startTime) endTime.setDate(endTime.getDate() + 1);
+
+                    if (now >= startTime && now < endTime) return true;
+                    if (startTime > now && startTime < oneHourFromNow) return true;
+                }
+                return false;
+            });
+        }
+
+        const processedGuards = guardsToProcess.map(guard => {
+            const now = new Date();
+            const schedule = guard.job_vacancies?.schedule_details?.[0];
+            const latestRecord = attendanceRecords?.filter(r => r.guard_id === guard.id).sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+            let statusInfo;
+
+            if (latestRecord && new Date(latestRecord.created_at).toDateString() === now.toDateString()) {
+                if (!latestRecord.checkout_at) {
+                    statusInfo = { text: 'حاضر', class: 'present', time: `منذ ${formatTimeAMPM(new Date(latestRecord.created_at).toTimeString().substring(0, 5))}` };
+                } else {
+                    const checkoutTime = formatTimeAMPM(new Date(latestRecord.checkout_at).toTimeString().substring(0, 5));
+                    if (latestRecord.status.includes('انسحاب')) {
+                        statusInfo = { text: 'انسحاب', class: 'withdrawal', time: `في ${checkoutTime}` };
+                    } else if (latestRecord.status === 'استئذان') {
+                        statusInfo = { text: 'استئذان', class: 'permission', time: `في ${checkoutTime}` };
+                    } else {
+                         statusInfo = { text: 'أكمل المناوبة', class: 'completed', time: `انصرف ${checkoutTime}` };
+                    }
+                }
+            } else if (schedule && schedule.days && schedule.days.includes(now.toLocaleString('en-US', { weekday: 'short' }))) {
+                const periods = schedule.periods || [schedule];
+                const firstPeriodStartTime = new Date();
+                const [fpStartHours, fpStartMinutes] = periods[0].start_time.split(':').map(Number);
+                firstPeriodStartTime.setHours(fpStartHours, fpStartMinutes, 0, 0);
+                if (now >= firstPeriodStartTime) {
+                    statusInfo = { text: 'غياب', class: 'absent', time: 'لم يسجل حضور' };
+                } else {
+                    statusInfo = { text: 'وردية قادمة', class: 'off', time: `تبدأ ${formatTimeAMPM(periods[0].start_time)}` };
+                }
+            } else {
+                statusInfo = { text: 'في راحة', class: 'off', time: 'ليس لديه وردية اليوم' };
+            }
+
+            const statusesToReset = ['غياب', 'انسحاب', 'استئذان', 'أكمل المناوبة'];
+            if (schedule && statusInfo && statusesToReset.includes(statusInfo.text)) {
+                const periods = schedule.periods || [schedule];
+                const lastPeriod = periods[periods.length - 1];
+                if (lastPeriod && lastPeriod.end_time) {
+                    const shiftEndDate = new Date();
+                    const [endHours, endMinutes] = lastPeriod.end_time.split(':').map(Number);
+                    shiftEndDate.setHours(endHours, endMinutes, 0, 0);
+                    const shiftStartDate = new Date();
+                    const [startHours, startMinutes] = periods[0].start_time.split(':').map(Number);
+                    shiftStartDate.setHours(startHours, startMinutes, 0, 0);
+                    if (shiftEndDate <= shiftStartDate) {
+                        shiftEndDate.setDate(shiftEndDate.getDate() + 1);
+                    }
+                    const resetTime = new Date(shiftEndDate.getTime() + 60 * 60 * 1000);
+                    if (now > resetTime) {
+                        statusInfo = { text: 'في راحة', class: 'off', time: 'انتهت الوردية' };
+                    }
                 }
             }
-            if (isScheduledNow) scheduledRightNowCount++;
+            return { ...guard, statusInfo };
+        });
 
-            let statusText = 'في راحة';
-            const latestAtt = attendanceRecords.filter(att => att.guard_id === g.id).sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+        const finalFilteredGuards = processedGuards.filter(guard => {
+            const schedule = guard.job_vacancies?.schedule_details?.[0];
+            const firstPeriod = schedule?.periods?.[0] || schedule;
+            const shiftPeriods = { 'A': { start: '00:00', end: '07:59' }, 'B': { start: '08:00', end: '15:59' }, 'C': { start: '16:00', end: '23:59' } };
 
-            if (latestAtt) {
-                if (latestAtt.status === 'حاضر' && !latestAtt.checkout_at) statusText = 'حاضر';
-                else if (latestAtt.status.includes('انسحاب')) statusText = 'انسحاب';
-                else if (latestAtt.status === 'استئذان') statusText = 'استئذان';
-            } 
-
-            if (statusText === 'في راحة' && isScheduledNow) {
-                statusText = 'غياب';
+            if (shiftPeriodVal && (!firstPeriod || !firstPeriod.start_time || (firstPeriod.start_time < shiftPeriods[shiftPeriodVal].start || firstPeriod.start_time > shiftPeriods[shiftPeriodVal].end))) {
+                return false;
             }
 
-            if (statusText === 'حاضر') presentCount++;
-            if (statusText === 'غياب') absentCount++;
-            if (statusText === 'في راحة') offCount++;
-            if (statusText === 'انسحاب') withdrawalCount++;
-            if (statusText === 'استئذان') permissionCount++;
+            if (statusVal) {
+                if (statusVal === 'في راحة' && (guard.statusInfo.text === 'وردية قادمة' || guard.statusInfo.text.includes('راحة'))) return true;
+                if (guard.statusInfo.text !== statusVal) return false;
+            }
+            return true;
         });
+
+        // --- بداية الإصلاح: طريقة حساب جديدة ومنطقية للإحصائيات ---
+        let presentCount = 0, absentCount = 0, withdrawalCount = 0, permissionCount = 0, offCount = 0;
+        finalFilteredGuards.forEach(g => {
+            const status = g.statusInfo.text;
+            if (status === 'حاضر') presentCount++;
+            else if (status === 'غياب') absentCount++;
+            else if (status === 'انسحاب') withdrawalCount++;
+            else if (status === 'استئذان') permissionCount++;
+            else if (status === 'في راحة' || status === 'وردية قادمة' || status === 'أكمل المناوبة') {
+                offCount++;
+            }
+        });
+
+        // "المجدولون" هم مجموع كل الحالات المتعلقة بالعمل (حاضر، غائب، ...الخ)
+        const scheduledCount = presentCount + absentCount + withdrawalCount + permissionCount;
+
         document.getElementById('stats-guard-present').textContent = presentCount;
-        document.getElementById('stats-guard-scheduled').textContent = scheduledRightNowCount;
-        document.getElementById('stats-guard-off').textContent = offCount;
         document.getElementById('stats-guard-absent').textContent = absentCount;
         document.getElementById('stats-guard-withdrawal').textContent = withdrawalCount;
         document.getElementById('stats-guard-permission').textContent = permissionCount;
+        document.getElementById('stats-guard-off').textContent = offCount;
+        document.getElementById('stats-guard-scheduled').textContent = scheduledCount;
+        // --- نهاية الإصلاح ---
+
         let coverageQuery = supabaseClient.from('users').select('*', { count: 'exact', head: true }).eq('employment_status', 'تغطية');
         let vacancyQuery = supabaseClient.from('job_vacancies').select('*', { count: 'exact', head: true }).eq('status', 'open');
         if (currentUser.role === 'مشرف') {
@@ -1797,81 +2057,26 @@ async function loadGuardAttendancePage() {
         document.getElementById('stats-guard-coverage').textContent = coverageCount || 0;
         const { count: vacancyCount } = await vacancyQuery;
         document.getElementById('stats-guard-vacancies').textContent = vacancyCount || 0;
-        // --- نهاية كود الإحصائيات ---
 
-        // --- 4. الفلترة المتقدمة وعرض البطاقات (هذا هو الكود المطور) ---
-        const filteredGuards = guards.filter(guard => {
-            const shift = guard.job_vacancies?.schedule_details?.[0];
-            const firstPeriod = shift?.periods?.[0] || shift;
-            if (timeFromVal && (!firstPeriod || firstPeriod.start_time < timeFromVal)) return false;
-            if (timeToVal && (!firstPeriod || firstPeriod.start_time > timeToVal)) return false;
-            // يمكنك إضافة الفلترة بالحالة هنا مستقبلاً
-            return true;
-        });
-
-        const cardsHtml = filteredGuards.map(guard => {
+        const cardsHtml = finalFilteredGuards.map(guard => {
             const schedule = guard.job_vacancies?.schedule_details?.[0];
-            let status = { text: 'في راحة', class: 'off', time: 'ليس لديه وردية اليوم' };
             let actionButton = '';
-
-            const latestRecord = attendanceRecords?.filter(r => r.guard_id === guard.id).sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
-
-            if (latestRecord && !latestRecord.checkout_at) {
-                const recordTime = formatTimeAMPM(new Date(latestRecord.created_at).toTimeString().substring(0, 5));
-                status = { text: 'حاضر', class: 'present', time: `منذ ${recordTime}` };
-            } else if (schedule) {
-                const periods = schedule.periods || [schedule];
-                let isScheduledToday = schedule.days.includes(now.toLocaleString('en-US', { weekday: 'short' }));
-                let nextPeriodForToday = null;
-
-                if (isScheduledToday) {
-                    for (const period of periods) {
-                        const [startHours, startMinutes] = period.start_time.split(':').map(Number);
-                        const periodStartTime = new Date();
-                        periodStartTime.setHours(startHours, startMinutes, 0, 0);
-                        if (periodStartTime > now) {
-                            nextPeriodForToday = period;
-                            break;
-                        }
-                    }
-                }
-                
-                if (latestRecord && latestRecord.checkout_at && new Date(latestRecord.checkout_at).toDateString() === now.toDateString()) {
-                    if (periods.length > 1 && nextPeriodForToday) {
-                        status = { text: 'بين الفترات', class: 'between-shifts', time: `التالية ${formatTimeAMPM(nextPeriodForToday.start_time)}` };
-                    }
-                } else if (isScheduledToday) {
-                    const firstPeriodStartTime = new Date();
-                    const [fpStartHours, fpStartMinutes] = periods[0].start_time.split(':').map(Number);
-                    firstPeriodStartTime.setHours(fpStartHours, fpStartMinutes, 0, 0);
-
-                    if (now >= firstPeriodStartTime && !latestRecord) {
-                        status = { text: 'غياب', class: 'absent', time: 'لم يسجل حضور' };
-                    } else {
-                        status = { text: 'وردية قادمة', class: 'off', time: `تبدأ ${formatTimeAMPM(periods[0].start_time)}` };
-                    }
-                }
-            }
-
-            if (status.class === 'absent') {
+            if (guard.statusInfo.class === 'absent') {
                 const shiftData = { absent_guard_id: guard.id, project: guard.project, location: guard.location, region: guard.region, city: guard.city, ...(schedule || {}) };
                 if (currentUser.role === 'ادارة العمليات') {
                     actionButton = `<button class="btn btn-secondary btn-sm add-to-coverage-btn" data-shift='${JSON.stringify(shiftData)}'><i class="ph-bold ph-plus"></i> للتغطية</button>`;
                 }
             }
-
             const directiveButton = `<button class="btn btn-secondary btn-sm open-directive-modal-btn" data-recipient-id="${guard.id}" data-recipient-name="${guard.name}" title="إرسال توجيه"><i class="ph-bold ph-paper-plane-tilt"></i> توجيه</button>`;
-            const mapButton = status.class === 'present' ? `<button class="btn btn-secondary btn-sm view-on-map-btn" data-guard-id="${guard.id}" title="عرض في الخريطة"><i class="ph-bold ph-map-pin-line"></i> الخريطة</button>` : '';
+            const mapButton = guard.statusInfo.class === 'present' ? `<button class="btn btn-secondary btn-sm view-on-map-btn" data-guard-id="${guard.id}" title="عرض في الخريطة"><i class="ph-bold ph-map-pin-line"></i> الخريطة</button>` : '';
             const projectDisplay = (Array.isArray(guard.project) ? guard.project.join(', ') : guard.project) || 'غير محدد';
-
             const shiftTimeHtmlText = createShiftTimeLabel(schedule);
             const shiftTimeHtml = schedule ? `<p style="color: var(--accent-color); font-weight: 700;"><i class="ph-fill ph-clock"></i> ${shiftTimeHtmlText}</p>` : '';
-
             return `
-                <div class="guard-card status-${status.class}">
+                <div class="guard-card status-${guard.statusInfo.class}">
                     <div class="guard-card-body">
                         <div class="guard-card-info"><h4>${guard.name}</h4><p><i class="ph-fill ph-map-pin"></i> ${projectDisplay} / ${guard.location || 'غير محدد'}</p>${shiftTimeHtml}</div>
-                        <div class="guard-card-status"><span class="status-indicator ${status.class}"></span><span>${status.text}</span><span class="time" style="margin-right: auto;">${status.time}</span></div>
+                        <div class="guard-card-status"><span class="status-indicator ${guard.statusInfo.class}"></span><span>${guard.statusInfo.text}</span><span class="time" style="margin-right: auto;">${guard.statusInfo.time}</span></div>
                     </div>
                     <div class="guard-card-actions">${actionButton}${mapButton}${directiveButton}</div>
                 </div>`;
@@ -1886,7 +2091,6 @@ async function loadGuardAttendancePage() {
                 .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, () => loadGuardAttendancePage())
                 .subscribe();
         }
-
     } catch (err) {
         container.innerHTML = `<p style="color: red;">حدث خطأ: ${err.message}</p>`;
         console.error("Guard Attendance Error:", err);
@@ -3187,13 +3391,11 @@ async function loadMapStatistics(filters = {}) {
     Object.values(statsElements).forEach(el => { if(el) el.textContent = '...'; });
 
     try {
-        // --- بداية التصحيح: تم إضافة "تغطية" لمطابقة صفحة حضور الحراس ---
         let guardsQuery = supabaseClient
             .from('users')
             .select('id, employment_status, job_vacancies!users_vacancy_id_fkey(schedule_details)')
             .eq('role', 'حارس أمن')
             .in('employment_status', ['اساسي', 'تغطية', 'بديل راحة']);
-        // --- نهاية التصحيح ---
 
         if (currentUser.role === 'ادارة العمليات') guardsQuery.eq('region', currentUser.region);
         else if (currentUser.role === 'مشرف') createProjectFilter(guardsQuery, currentUser.project);
@@ -3205,37 +3407,31 @@ async function loadMapStatistics(filters = {}) {
         const { data: guards, error: guardsError } = await guardsQuery;
         if (guardsError) throw guardsError;
 
-        const yesterday = new Date(Date.now() - 36 * 60 * 60 * 1000).toISOString();
-        const { data: attendanceRecords, error: attendanceError } = await supabaseClient.from('attendance').select('guard_id, status, created_at').gte('created_at', yesterday);
+        // --- التعديل: تصفية الحراس لتشمل فقط من لديهم وردية فعالة الآن ---
+        const activeGuards = guards.filter(isGuardShiftActiveNow);
+
+        const activeGuardIds = activeGuards.map(g => g.id);
+        if (activeGuardIds.length === 0) {
+             Object.values(statsElements).forEach(el => { if(el) el.textContent = '0'; });
+             statsElements.scheduled.textContent = '0';
+             return;
+        }
+
+        const { data: attendanceRecords, error: attendanceError } = await supabaseClient.from('attendance').select('guard_id, status, created_at, checkout_at').in('guard_id', activeGuardIds);
         if (attendanceError) throw attendanceError;
 
-        let presentCount = 0, scheduledRightNowCount = 0, absentCount = 0, permissionCount = 0, withdrawalCount = 0;
+        let presentCount = 0, absentCount = 0, permissionCount = 0, withdrawalCount = 0;
         const now = new Date();
-        const currentTime = now.toTimeString().substring(0, 5);
-        const currentDay = now.toLocaleString('en-US', { weekday: 'short' });
 
-        guards.forEach(guard => {
-            const shift = guard.job_vacancies?.schedule_details?.[0];
-            let isScheduledNow = false;
-            if (shift && shift.days && shift.days.includes(currentDay)) {
-                const startTime = shift.start_time;
-                const endTime = shift.end_time;
-                if (endTime < startTime) { isScheduledNow = (currentTime >= startTime || currentTime < endTime); } 
-                else { isScheduledNow = (currentTime >= startTime && currentTime < endTime); }
-                if (isScheduledNow) scheduledRightNowCount++;
-            }
+        activeGuards.forEach(guard => {
+            let statusText = 'غياب'; // الافتراضي للحارس الفعال هو غياب
+            const latestRecord = attendanceRecords.filter(r => r.guard_id === guard.id && new Date(r.created_at).toDateString() === now.toDateString()).sort((a,b) => new Date(b.created_at) - new Date(a.created_at))[0];
 
-            let statusText = 'في راحة';
-            const latestAttendance = attendanceRecords.filter(r => r.guard_id === guard.id).sort((a,b) => new Date(b.created_at) - new Date(a.created_at))[0];
-
-            if (latestAttendance) {
-                if (latestAttendance.status === 'حاضر') statusText = 'حاضر';
-                else if (latestAttendance.status.includes('انسحاب')) statusText = 'انسحاب';
-                else if (latestAttendance.status === 'استئذان') statusText = 'استئذان';
-            }
-
-            if (statusText === 'في راحة' && isScheduledNow) {
-                 statusText = 'غياب';
+            if (latestRecord) {
+                if (!latestRecord.checkout_at) statusText = 'حاضر';
+                else if (latestRecord.status.includes('انسحاب')) statusText = 'انسحاب';
+                else if (latestRecord.status === 'استئذان') statusText = 'استئذان';
+                else statusText = 'أكمل المناوبة';
             }
 
             if (statusText === 'حاضر') presentCount++;
@@ -3245,29 +3441,14 @@ async function loadMapStatistics(filters = {}) {
         });
 
         statsElements.present.textContent = presentCount;
-        statsElements.scheduled.textContent = scheduledRightNowCount;
+        statsElements.scheduled.textContent = activeGuards.length; // عدد المجدولين الفعالين هو طول القائمة المفلترة
         statsElements.absent.textContent = absentCount;
         statsElements.permission.textContent = permissionCount;
         if (statsElements.withdrawal) statsElements.withdrawal.textContent = withdrawalCount;
 
+        // بقية الإحصائيات تبقى كما هي
         let coverageQuery = supabaseClient.from('users').select('*', { count: 'exact', head: true }).eq('employment_status', 'تغطية');
         let vacancyQuery = supabaseClient.from('job_vacancies').select('*', { count: 'exact', head: true }).eq('status', 'open');
-
-        if (currentUser.role === 'ادارة العمليات') {
-            coverageQuery.eq('region', currentUser.region);
-            vacancyQuery.eq('region', currentUser.region);
-        } else if (currentUser.role === 'مشرف') {
-            createProjectFilter(coverageQuery, currentUser.project, 'project');
-            vacancyQuery.in('project', currentUser.project);
-        }
-        if (filters.region) {
-            coverageQuery.eq('region', filters.region);
-            vacancyQuery.eq('region', filters.region);
-        }
-        if (filters.city) {
-            coverageQuery.eq('city', filters.city);
-            vacancyQuery.eq('location', filters.city);
-        }
         if (filters.project) {
             createProjectFilter(coverageQuery, [filters.project], 'project');
             vacancyQuery.eq('project', filters.project);
@@ -3276,7 +3457,6 @@ async function loadMapStatistics(filters = {}) {
             coverageQuery.eq('location', filters.location);
             vacancyQuery.eq('specific_location', filters.location);
         }
-
         const { count: coverageCount } = await coverageQuery;
         statsElements.coverage.textContent = coverageCount || 0;
         const { count: vacancyCount } = await vacancyQuery;
@@ -3533,7 +3713,8 @@ async function initializeMap() {
                     job_vacancies:job_vacancies!users_vacancy_id_fkey(schedule_details)
                 )
             `)
-            .eq('status', 'حاضر');
+            .eq('status', 'حاضر')
+            .is('checkout_at', null);
 
         if (filters.region) query = query.eq('users.region', filters.region);
         if (filters.city) query = query.eq('users.city', filters.city);
@@ -3544,30 +3725,37 @@ async function initializeMap() {
         const { data: presentGuardsData, error } = await query;
         if (error) throw error;
 
-        const presentGuards = presentGuardsData.map(g => g.users);
+        let presentGuards = presentGuardsData.map(g => g.users);
+        presentGuards = presentGuards.filter(isGuardShiftActiveNow);
+
+        // --- الإضافة: فلترة الحراس لإخفاء من لديهم تحديث قديم ---
+        const nineHoursAgo = new Date(Date.now() - 9 * 60 * 60 * 1000);
+        presentGuards = presentGuards.filter(guard => {
+            if (!guard.guard_locations || !guard.guard_locations.created_at) {
+                return false; // إخفاء الحارس إذا لم يكن لديه أي بيانات موقع
+            }
+            const lastUpdate = new Date(guard.guard_locations.created_at);
+            return lastUpdate > nineHoursAgo; // إظهار الحارس فقط إذا كان آخر تحديث خلال الـ 20 دقيقة الماضية
+        });
+        // --- نهاية الإضافة ---
+
         allGuardsOnMap = presentGuards; 
 
-        if (presentGuards.length === 0) {
-             console.log("لا يوجد حراس حاضرون يطابقون الفلترة الحالية.");
-             return;
-        }
+        if (presentGuards.length === 0) { return; }
 
         presentGuards.forEach(guard => {
             const loc = guard.guard_locations;
             if (!loc || !loc.latitude) return;
 
             const schedule = guard.job_vacancies?.schedule_details?.[0];
-            const shiftName = schedule?.name || 'وردية أساسية';
-            const shiftTime = schedule ? `${formatTimeAMPM(schedule.start_time)} - ${formatTimeAMPM(schedule.end_time)}` : 'غير محدد';
+            const shiftTime = createShiftTimeLabel(schedule);
             const lastUpdate = formatGregorianDateTime(loc.created_at);
 
             const popupContent = `
                 <div style="font-family: 'Cairo', sans-serif; font-size: 1rem;">
-                    <h4 style="margin: 0 0 10px 0; font-size: 1.2rem; border-bottom: 1px solid #eee; padding-bottom: 8px;">${guard.name}</h4>
-                    <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px;">
-                        <li><strong>المشروع:</strong> ${Array.isArray(guard.project) ? guard.project.join(', ') : guard.project || 'غير محدد'}</li>
+                    <h4 style="margin: 0 0 10px 0; font-size: 1.2rem;">${guard.name}</h4>
+                    <ul style="list-style: none; padding: 0; margin: 0;">
                         <li><strong>الموقع:</strong> ${guard.location || 'غير محدد'}</li>
-                        <li><strong>الوردية:</strong> ${shiftName}</li>
                         <li><strong>الوقت:</strong> ${shiftTime}</li>
                     </ul>
                     <small style="display: block; text-align: left; margin-top: 10px; color: #6b7280;">آخر تحديث: ${lastUpdate}</small>
@@ -3577,13 +3765,11 @@ async function initializeMap() {
             markersLayer.addLayer(marker);
             guardMarkers.set(guard.id, marker);
         });
-        
-        // --- بداية الإضافة: كود التمركز التلقائي للخريطة ---
+
         if (guardMarkers.size > 0) {
             const markerGroup = L.featureGroup(Array.from(guardMarkers.values()));
             map.fitBounds(markerGroup.getBounds().pad(0.1)); 
         }
-        // --- نهاية الإضافة ---
 
         if (window.zoomToGuardId) {
             const guardIdToFind = parseInt(window.zoomToGuardId, 10);
@@ -3591,8 +3777,6 @@ async function initializeMap() {
                 const markerToZoom = guardMarkers.get(guardIdToFind);
                 map.setView(markerToZoom.getLatLng(), 17);
                 markerToZoom.openPopup();
-            } else {
-                showToast('لم يتم العثور على موقع للحارس المحدد.', 'error');
             }
             window.zoomToGuardId = null;
         }
@@ -3603,10 +3787,8 @@ async function initializeMap() {
             (payload) => {
                 const newLocation = payload.new;
                 if (!newLocation || !newLocation.guard_id) return;
-                const guardId = newLocation.guard_id;
-                if (guardMarkers.has(guardId)) {
-                    const marker = guardMarkers.get(guardId);
-                    marker.setLatLng([newLocation.latitude, newLocation.longitude]);
+                if (guardMarkers.has(newLocation.guard_id)) {
+                    guardMarkers.get(newLocation.guard_id).setLatLng([newLocation.latitude, newLocation.longitude]);
                 }
             })
             .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, 
@@ -4429,7 +4611,7 @@ async function loadSupervisorSchedulesPage() {
             const workDays = schedule.days.map(day => dayTranslations[day] || day).join('، ');
             scheduleDetailsHtml = `
                 <div class="info-line"><i class="ph-bold ph-user-focus"></i><strong>الحالة:</strong> أساسي</div>
-                <div class="info-line"><i class="ph-bold ph-clock"></i><strong>الوقت:</strong> من ${formatTimeAMPM(schedule.start_time)} إلى ${formatTimeAMPM(schedule.end_time)}</div>
+                <div class="info-line"><i class="ph-bold ph-clock"></i><strong>الوقت:</strong> ${createShiftTimeLabel(schedule)}</div>
                 <div class="info-line"><i class="ph-bold ph-calendar-check"></i><strong>أيام العمل:</strong> ${workDays}</div>
             `;
         } else if (guard.employment_status === 'بديل راحة') {
@@ -6523,17 +6705,8 @@ if (menuBtn) {
             .from('users').select('*').eq('auth_user_id', session.user.id).single();
 
         if (userProfile) {
-            
-            currentUser = userProfile;
-            sessionStorage.setItem('currentUser', JSON.stringify(userProfile));
-            updateUIVisibility(currentUser.role);
-            document.getElementById('login-page').style.display = 'none';
-            document.querySelector('.dashboard-container').classList.remove('hidden');
-            const userProfileSpan = document.querySelector('.user-profile span');
-            if (userProfileSpan) userProfileSpan.textContent = `مرحباً، ${currentUser.name}`;
-            displayActiveAnnouncements();
-            handleRouteChange(true);
-        } else {
+    initializeUserSession(userProfile);
+} else {
             
             await supabaseClient.auth.signOut();
         }
@@ -6551,20 +6724,6 @@ if (menuBtn) {
 // ===   بداية الاستبدال الكامل لمنطق التنقل بين الصفحات   ===
 // ==========================================================
 // دالة جديدة ومهمة لإعادة جلب بيانات المستخدم الحالي من قاعدة البيانات
-async function refreshCurrentUser() {
-    if (currentUser && currentUser.id) {
-        const { data, error } = await supabaseClient
-            .from('users')
-            .select('*')
-            .eq('id', currentUser.id)
-            .single();
-        if (data) {
-            currentUser = data;
-            sessionStorage.setItem('currentUser', JSON.stringify(data)); // تحديث البيانات المحفوظة
-            console.log("User data refreshed:", currentUser);
-        }
-    }
-}
 
 // ==========================================================
 // ===       بداية الاستبدال: نظام الروابط والتنقل المطور       ===
@@ -6574,87 +6733,7 @@ const navLinks = document.querySelectorAll('.sidebar-nav a');
 const pageContents = document.querySelectorAll('.page-content');
 const mainTitle = document.getElementById('main-title');
 // نهاية الإضافة
-async function refreshCurrentUser() {
-    if (currentUser && currentUser.id) {
-        const { data, error } = await supabaseClient.from('users').select('*').eq('id', currentUser.id).single();
-        if (data) {
-            currentUser = data;
-            sessionStorage.setItem('currentUser', JSON.stringify(data));
-        }
-    }
-}
 
-async function handleRouteChange(isInitialLoad = false) {
-    if (!isInitialLoad) {
-        await refreshCurrentUser();
-    }
-
-    if (activeSubscription) {
-        supabaseClient.removeChannel(activeSubscription);
-        activeSubscription = null;
-    }
-    if (pageRefreshInterval) {
-        clearInterval(pageRefreshInterval);
-        pageRefreshInterval = null;
-    }
-
-    const path = window.location.pathname;
-    let linkToActivate = document.querySelector(`.sidebar-nav a[href="${path}"]`);
-
-    if (path === '/' || path === '/index.html' || !linkToActivate) {
-        linkToActivate = document.querySelector('.sidebar-nav li[style*="display: block"] a');
-        if (linkToActivate) {
-            history.replaceState(null, '', linkToActivate.getAttribute('href'));
-        }
-    }
-
-    if (!linkToActivate) return;
-
-    const targetPageId = linkToActivate.dataset.page;
-    sessionStorage.setItem('lastVisitedPage', targetPageId);
-
-    document.getElementById('main-title').textContent = linkToActivate.querySelector('span').textContent;
-    document.querySelectorAll('.sidebar-nav a').forEach(navLink => navLink.classList.remove('active'));
-    linkToActivate.classList.add('active');
-
-    document.querySelectorAll('.page-content').forEach(page => page.classList.add('hidden'));
-    const targetPage = document.getElementById(targetPageId);
-
-    if (targetPage) {
-        targetPage.classList.remove('hidden');
-
-        const pageLoaders = {
-            'page-geo': () => { initializeFilters('geo'); initializeMap(); },
-            'page-employees': () => { initializeFilters('hr-employees'); loadEmployeeTabData(); },
-            'page-hr-attendance-log': () => { initializeFilters('hr-attlog'); loadHrAttendanceLogPage(); },
-            'page-attendance-management': () => { initializeFilters('hr-attmgmt'); loadAttendanceManagementPage(); },
-            'page-payroll': () => {
-                document.getElementById('payroll-results-container').innerHTML = '<p style="text-align: center;">الرجاء اختيار الشهر والضغط على "توليد المسير" لعرض البيانات.</p>';
-                initializeFilters('hr-payroll');
-            },
-            'page-vacancies': () => { initializeFilters('vc'); loadVacancyTabData(); },
-            'page-contracts': () => { initializeContractFilters(); fetchContracts(); },
-            'page-penalties': () => { initializeFilters('hr-penalties'); loadPenaltiesPage(); },
-            'page-coverage': () => { loadCoveragePage(); pageRefreshInterval = setInterval(loadCoveragePage, 60000); },
-            'page-supervisor-applications': () => { loadSupervisorApplicationsPage(); pageRefreshInterval = setInterval(loadSupervisorApplicationsPage, 60000); },
-            'page-attendance': loadAttendancePage, 'page-my-requests': loadMyRequestsPage, 'page-permission-requests': loadPermissionRequests,
-            'page-ops-review-requests': loadOpsReviewRequestsPage, 'page-visits': fetchVisits, 'page-my-profile': loadMyProfilePage,
-            'page-admin-dashboard': loadAdminDashboardPage, 'page-announcements': loadAnnouncementsPage, 'page-user-management': loadUserManagementPage,
-            'page-ops-nominees': loadOpsNomineesPage, 'page-directives-ops': loadOpsDirectivesPage, 'page-guard-attendance': () => { initializeGuardAttendanceFilters(); loadGuardAttendancePage(); },
-            'page-patrol': loadSupervisorPatrolPage, 'page-supervisor-schedules': loadSupervisorSchedulesPage, 'page-supervisor-permission-requests': loadSupervisorPermissionRequestsPage,
-            'page-supervisor-coverage-apps': loadSupervisorCoverageAppsPage, 'page-finance-coverage': loadFinanceCoveragePage,
-            'page-hr-data-entry': () => { document.getElementById('import-results-container').innerHTML = ''; }, 'page-official-holidays': loadHolidaysPage,
-            'page-hr-ops-hiring': loadHrOpsHiringPage, 'page-coverage-requests': loadCoverageRequestsPage, 'page-leave-requests': loadLeaveRequests,
-            'page-resignation-requests': loadResignationRequests, 'page-loan-requests': loadLoanRequests, 'page-requests-archive': () => loadArchivePage('leave'),
-            'page-my-directives': loadMyDirectivesPage, 'page-my-schedule': loadMySchedulePage, 'page-my-visits': loadMyVisitsPage,
-            'page-hr-sms': () => {} // صفحة فارغة لا تحتاج لدالة تحميل
-        };
-
-        if (pageLoaders[targetPageId]) {
-            pageLoaders[targetPageId]();
-        }
-    }
-}
 
 navLinks.forEach(link => {
     link.addEventListener('click', function(event) {
@@ -6977,15 +7056,27 @@ if (editAnnBtn) {
     const { data, error } = await supabaseClient.from('announcements').select('*').eq('id', annId).single();
     if (data) {
         document.getElementById('announcement-id').value = data.id;
-        document.getElementById('announcement-title').value = data.title || ''; // <-- السطر الجديد
+        document.getElementById('announcement-title').value = data.title || '';
         document.getElementById('announcement-content').value = data.content;
         document.getElementById('announcement-type').value = data.type;
-        // ... (باقي الكود)
-        // تحويل التوقيت ليتوافق مع حقل الإدخال
-        const toLocalISOString = (date) => new Date(new Date(date).getTime() - (new Date().getTimezoneOffset() * 60000)).toISOString().slice(0, 16);
+
+        // دالة مساعدة لتحويل التاريخ ليتوافق مع حقل الإدخال
+        const toLocalISOString = (date) => {
+            if (!date) return '';
+            const d = new Date(date);
+            // طرح فارق التوقيت المحلي لضمان عرض الوقت الصحيح في المنطقة الزمنية للمستخدم
+            d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+            return d.toISOString().slice(0, 16);
+        };
+
         document.getElementById('announcement-start-date').value = toLocalISOString(data.start_date);
         document.getElementById('announcement-end-date').value = toLocalISOString(data.end_date);
-        window.scrollTo({ top: 0, behavior: 'smooth' }); // الصعود لأعلى الصفحة
+
+        // الصعود لأعلى الصفحة لعرض النموذج
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else {
+        alert('حدث خطأ أثناء جلب بيانات الإعلان.');
+        console.error(error);
     }
 }
 
@@ -11597,32 +11688,8 @@ if (loginForm) {
                 return;
             }
 
-            console.log('%cنجاح! تم العثور على المستخدم:', 'color: green; font-weight: bold;', userProfile);
-            currentUser = userProfile;
-            sessionStorage.setItem('currentUser', JSON.stringify(userProfile));
-            await supabaseClient.from('audit_logs').insert({
-             user_id: userProfile.auth_user_id,
-             user_name: userProfile.name,
-             action_type: 'تسجيل دخول ناجح',
-             details: { role: userProfile.role }
-            });
-            updateNotificationBell(); // تحديث الجرس عند تسجيل الدخول
-            setInterval(updateNotificationBell, 60000); // تحديث الجرس كل دقيقة
-            
-
-            // حفظ الجلسة الحقيقية (Supabase يقوم بذلك تلقائياً)
-            // لم نعد بحاجة لـ sessionStorage
-
-            updateUIVisibility(userProfile.role);
-            document.getElementById('login-page').style.display = 'none';
-            document.querySelector('.dashboard-container').classList.remove('hidden');
-
-            const userProfileSpan = document.querySelector('.user-profile span');
-            if (userProfileSpan) userProfileSpan.textContent = `مرحباً، ${userProfile.name}`;
-
-            const firstVisibleLink = document.querySelector('.sidebar-nav li[style*="display: block"] a');
-            if (firstVisibleLink) firstVisibleLink.click();
-            displayActiveAnnouncements();
+            await supabaseClient.from('audit_logs').insert({ user_id: userProfile.auth_user_id, user_name: userProfile.name, action_type: 'تسجيل دخول ناجح', details: { role: userProfile.role } });
+initializeUserSession(userProfile);
         }
 
         loginBtn.disabled = false;
