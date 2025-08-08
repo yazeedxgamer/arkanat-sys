@@ -1,4 +1,4 @@
-// Version: 1.0.5
+// Version: 1.0.6
 // === firebase-messaging-sw.js ===
 importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js');
 importScripts('https://www.gstatic.com/firebasejs/9.23.0/firebase-messaging-compat.js');
