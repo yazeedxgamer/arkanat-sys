@@ -11291,43 +11291,54 @@ if (confirmEndPatrolBtn) {
 // ==================== بداية الاستبدال ====================
 // عند الضغط على زر "تسجيل انصراف"
 if (checkOutBtn) {
-    // تعطيل الزر مؤقتاً لمنع النقرات المزدوجة أثناء جلب البيانات
     checkOutBtn.disabled = true;
     checkOutBtn.innerHTML = '<i class="ph-fill ph-spinner-gap animate-spin"></i> التحقق...';
 
     try {
-        // 1. جلب بيانات وردية المستخدم للتأكد من وقت الانتهاء
         const { data: userWithVacancy, error: userError } = await supabaseClient.from('users').select('*, job_vacancies!users_vacancy_id_fkey(*)').eq('id', currentUser.id).single();
         if (userError || !userWithVacancy?.job_vacancies?.schedule_details?.[0]) {
             throw new Error('لم يتم العثور على تفاصيل ورديتك.');
         }
 
         const schedule = userWithVacancy.job_vacancies.schedule_details[0];
-        const [endHours, endMinutes] = schedule.end_time.split(':').map(Number);
+
+        // --- بداية التعديل: تحديد وقت نهاية الوردية بشكل آمن ---
+        let endTimeString;
+        if (schedule.periods && schedule.periods.length > 0) {
+            // للهيكل الجديد، استخدم نهاية آخر فترة عمل في اليوم
+            endTimeString = schedule.periods[schedule.periods.length - 1].end_time;
+        } else {
+            // للهيكل القديم (للتوافقية)
+            endTimeString = schedule.end_time;
+        }
+
+        if (!endTimeString) {
+            throw new Error('لم يتم تحديد وقت نهاية الوردية في جدولك.');
+        }
+
+        const [endHours, endMinutes] = endTimeString.split(':').map(Number);
+        // --- نهاية التعديل ---
+
         const shiftEndTime = new Date();
         shiftEndTime.setHours(endHours, endMinutes, 0, 0);
 
         const now = new Date();
-        let newStatus = 'اكمل المناوبة'; // الحالة الافتراضية
+        let newStatus = 'اكمل المناوبة';
         let proceedToCheckout = false;
 
-        // 2. التحقق إذا كان الانصراف مبكراً
         if (now < shiftEndTime) {
             const warningMessage = "تنبيه! ورديتك لم تنته بعد.\n\nهل أنت متأكد من رغبتك في تسجيل الانصراف الآن؟\nسيتم تسجيل هذا الإجراء كـ 'انسحاب (انصراف مبكر)' وقد يترتب عليه خصومات.";
             if (confirm(warningMessage)) {
-                newStatus = 'انسحاب (انصراف مبكر)'; // تغيير الحالة إذا وافق المستخدم
+                newStatus = 'انسحاب (انصراف مبكر)';
                 proceedToCheckout = true;
             } else {
-                // إذا ألغى المستخدم، أعد كل شيء كما كان
                 checkOutBtn.disabled = false;
                 checkOutBtn.innerHTML = 'تسجيل انصراف';
             }
         } else {
-            // إذا لم يكن مبكراً، وافق على الانصراف مباشرة
             proceedToCheckout = true;
         }
 
-        // 3. تنفيذ الانصراف إذا تم التأكيد
         if (proceedToCheckout) {
             stopPersistentTracking();
 
@@ -11339,9 +11350,7 @@ if (checkOutBtn) {
                 })
                 .eq('id', checkOutBtn.dataset.attendanceId);
 
-            if (error) {
-                throw new Error('فشل تسجيل الانصراف في قاعدة البيانات.');
-            }
+            if (error) throw error;
 
             showToast('تم تسجيل انصرافك بنجاح.', 'success');
             loadAttendancePage();
@@ -11349,7 +11358,6 @@ if (checkOutBtn) {
 
     } catch (error) {
         showCustomAlert('خطأ', error.message, 'error');
-        // إعادة تفعيل الزر في حالة حدوث أي خطأ
         checkOutBtn.disabled = false;
         checkOutBtn.innerHTML = 'تسجيل انصراف';
     }
