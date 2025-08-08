@@ -3452,3 +3452,11 @@ animation: pulse-glow 1.5s infinite alternate;
 /* ======================================================== */
 /* ===                 نهاية الإضافة                   === */
 /* ======================================================== */
+/* بداية الإضافة: تنسيق حالة "بين الفترات" */
+.guard-card.status-between-shifts { 
+    border-top-color: #8b5cf6; /* بنفسجي */
+}
+.status-indicator.between-shifts { 
+    background-color: #8b5cf6; 
+}
+/* نهاية الإضافة */
